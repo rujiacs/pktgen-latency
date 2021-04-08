@@ -266,5 +266,6 @@ void tx_thread_run_tx(int portid,
 	if (tx_ctl.trace != NULL)
 		fclose(tx_ctl.trace);
 
+	LOG_INFO("TX thread quit.");
 	ctl_set_state(WORKER_TX, STATE_STOPPED);
 }

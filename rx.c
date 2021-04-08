@@ -134,5 +134,6 @@ void rx_thread_run_rx(int portid)
 		pcapout = NULL;
 	}
 
+	LOG_INFO("RX thread quit");
 	ctl_set_state(WORKER_RX, STATE_STOPPED);
 }

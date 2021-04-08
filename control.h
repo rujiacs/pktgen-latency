@@ -23,7 +23,7 @@ struct ctl_worker {
 // ms
 #define RX_QUIT_DELAY	200
 
-bool ctl_is_stop(void);
+bool ctl_is_stop(unsigned workerid);
 
 void ctl_signal_handler(int signo);
 

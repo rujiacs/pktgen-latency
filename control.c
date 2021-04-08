@@ -3,6 +3,8 @@
 
 #include <signal.h>
 
+#include <rte_cycles.h>
+
 static bool force_quit = false;
 static uint64_t rx_quit_cycle = 0;
 
@@ -10,7 +12,7 @@ static struct ctl_worker worker_state[WORKER_MAX] = {
 	{ .state = STATE_UNINIT, .lcoreid = UINT_MAX }
 };
 
-bool ctl_is_stop(unsigned workid)
+bool ctl_is_stop(unsigned workerid)
 {
 	if (workerid == WORKER_TX)
 		return force_quit;
