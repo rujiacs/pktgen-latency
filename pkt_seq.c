@@ -34,14 +34,10 @@ static void __parse_mac_addr(const char *str,
 	}
 }
 
-void pkt_seq_set_mac_src(const char *str)
+void pkt_seq_set_default_mac(void)
 {
-	__parse_mac_addr(str, &mac_src);
-}
-
-void pkt_seq_set_mac_dst(const char *str)
-{
-	__parse_mac_addr(str, &mac_dst);
+	__parse_mac_addr(PKT_SEQ_MAC_SRC, &mac_src);
+	__parse_mac_addr(PKT_SEQ_MAC_DST, &mac_dst);
 }
 
 void pkt_seq_init(struct pkt_seq_info *info)

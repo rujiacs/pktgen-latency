@@ -56,10 +56,10 @@ struct pkt_probe {
 			    ((d) & 0xff))
 
 /* Default packet sequence configuration */
-#define PKT_SEQ_MAC_SRC "12:12:12:12:12:12"
-#define PKT_SEQ_MAC_DST "21:21:21:21:21:21"
-#define PKT_SEQ_IP_SRC IPv4(192,168,0,12)
-#define PKT_SEQ_IP_DST IPv4(192,168,0,21)
+#define PKT_SEQ_MAC_SRC "0c:42:a1:75:5f:b4"
+#define PKT_SEQ_MAC_DST "0c:42:a1:5c:02:08"
+#define PKT_SEQ_IP_SRC IPv4(192,68,0,12)
+#define PKT_SEQ_IP_DST IPv4(192,68,0,21)
 
 #define PKT_SEQ_PKT_LEN 60
 #define PKT_SEQ_PROTO IPPROTO_TCP
@@ -75,9 +75,7 @@ struct pkt_probe {
 #define PKT_SEQ_PROBE_PORT_SRC 3024
 #define PKT_SEQ_PROBE_PORT_DST 3024
 
-void pkt_seq_set_mac_src(const char *str);
-
-void pkt_seq_set_mac_dst(const char *str);
+void pkt_seq_set_default_mac(void);
 
 void pkt_seq_init(struct pkt_seq_info *info);
 

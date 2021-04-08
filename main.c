@@ -219,7 +219,7 @@ static int __lcore_main(__attribute__((__unused__))void *arg)
 	LOG_INFO("lcore %u (worker %u) started.", lcoreid, workerid);
 
 	if (workerid == WORKER_RX)
-		rxtx_thread_run_rx(0);
+		rxtx_thread_run_rx(1);
 	else if (workerid == WORKER_TX)
 		rxtx_thread_run_tx(0, mbuf_pool, tx_type, NULL, trace_file);
 	else {

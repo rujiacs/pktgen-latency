@@ -14,11 +14,11 @@ enum {
 	TX_TYPE_SINGLE = 0,
 	TX_TYPE_RANDOM,
 	TX_TYPE_5TUPLE_TRACE,
-	TX_TYPE_PCAP,
+//	TX_TYPE_PCAP,
 	TX_TYPE_MAX,
 };
 
-#define DEFAULT_PKT_BURST 32
+#define DEFAULT_PKT_BURST 16
 #define RX_BURST DEFAULT_PKT_BURST
 #define TX_BURST DEFAULT_PKT_BURST
 #define MAX_MBUF_PER_PORT 2048
@@ -42,9 +42,9 @@ struct tx_ctl {
 	struct rte_mbuf *mbuf_tbl[TX_BURST];
 };
 
-void rxtx_thread_run_rxtx(int sender, int recv,
-				struct rte_mempool *mp, unsigned tx_type,
-				struct pkt_seq_info *seq, const char *filename);
+// void rxtx_thread_run_rxtx(int sender, int recv,
+// 				struct rte_mempool *mp, unsigned tx_type,
+// 				struct pkt_seq_info *seq, const char *filename);
 
 void rxtx_thread_run_rx(int portid);
 
