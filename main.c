@@ -8,6 +8,8 @@
 
 #include <getopt.h>
 #include <signal.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 #include "util.h"
 #include "stat.h"
@@ -16,62 +18,26 @@
 #include "pkt_seq.h"
 #include "measure.h"
 
-#define CLIENT_RXQ_NAME "dpdkr%u_tx"
-#define CLIENT_TXQ_NAME "dpdkr%u_rx"
-#define CLIENT_MP_NAME_PREFIX	"ovs_mp_2030_0"
-#define CLIENT_MP_PREFIX_LEN 13
+#define RX_RING_SIZE 1024
+#define TX_RING_SIZE 1024
 
-static int sender_id = -1;
-static int receiver_id = -1;
+#define NUM_MBUFS 8191
+#define MBUF_CACHE_SIZE 250
+#define BURST_SIZE 32
 
-static unsigned dev_type = 0;
 static unsigned tx_type = TX_TYPE_SINGLE;
 
 //static int portid = -1;
 
-static struct rte_mempool *mp = NULL;
+static struct rte_mempool *mbuf_pool = NULL;
 
+static char *trace_file = NULL;
 
-struct lcore_param {
-	bool is_rx;
-	bool is_tx;
-	bool is_stat;
-};
-
-#define LCORE_MAX 3
-
-static struct lcore_param lcore_param[RTE_MAX_LCORE] = {
-	{
-		.is_rx = false,
-		.is_tx = false,
-		.is_stat = false,
+static const struct rte_eth_conf port_conf_default = {
+	.rxmode = {
+		.max_rx_pkt_len = RTE_ETHER_MAX_LEN,
 	},
 };
-
-static const char *__get_rxq_name(unsigned int id)
-{
-	static char buffer[RTE_RING_NAMESIZE];
-
-	snprintf(buffer, sizeof(buffer), CLIENT_RXQ_NAME, id);
-	return buffer;
-}
-
-static const char *__get_txq_name(unsigned int id)
-{
-	static char buffer[RTE_RING_NAMESIZE];
-
-	snprintf(buffer, sizeof(buffer), CLIENT_TXQ_NAME, id);
-	return buffer;
-}
-
-static int __parse_client_num(const char *client)
-{
-	if (str_to_int(client, 10, &sender_id)) {
-		receiver_id = sender_id + 1;
-		return 0;
-	}
-	return -1;
-}
 
 static void __usage(const char *progname)
 {
@@ -87,21 +53,20 @@ static int __parse_options(int argc, char *argv[])
 	int opt = 0;
 	char **argvopt = argv;
 	const char *progname = NULL;
+	bool is_trace = false, is_random = false;
 
 	progname = argv[0];
-
 	while ((opt = getopt(argc, argvopt, "t:r:o:R")) != -1) {
 		switch(opt) {
 			case 't':
-				if (strcmp(optarg, "eth") == 0) {
-					dev_type = DEV_TYPE_ETH;
-				} else if (strcmp(optarg, "dpdkr") == 0) {
-					dev_type = DEV_TYPE_DPDKR;
-				} else {
-					LOG_ERROR("Wrong device type %s", optarg);
-					__usage(progname);
-					return -1;
+				trace_file = strdup(optarg);
+				// check if the file exists
+				if((access(trace_file, F_OK)) == -1) {
+					LOG_ERROR("Trace file %s doesn't exist", trace_file);
+					zfree(trace_file);
 				}
+				LOG_INFO("Use 5-tuple trace file %s", trace_file);
+				is_trace = true;
 				break;
 			case 'r':
 				rxtx_set_rate(optarg);
@@ -110,176 +75,169 @@ static int __parse_options(int argc, char *argv[])
 				stat_set_output(optarg);
 				break;
 			case 'R':
-				tx_type = TX_TYPE_RANDOM;
+				is_random = true;
 				break;
 			default:
 				__usage(progname);
 				return -1;
 		}
 	}
+
+	if (is_trace && is_random) {
+		LOG_INFO("Both of 5tuple trace and random trace are selected, use 5-tuple trace");
+		tx_type = TX_TYPE_5TUPLE_TRACE;
+	}
+	else if (is_random) {
+		tx_type = TX_TYPE_RANDOM;
+	}
+	else
+		tx_type = TX_TYPE_SINGLE;
+
 	return 0;
 }
 
 /* return value: if need to create stats thread */
-static bool __set_lcore(void)
+static void __set_lcore(void)
 {
 	unsigned core = 0;
-	unsigned used_core[3] = {UINT_MAX}, used = 0;
+	unsigned rx_core = UINT_MAX, tx_core = UINT_MAX, master_core = UINT_MAX;
 
 	for (core = 0; core < RTE_MAX_LCORE; core++) {
 		if (rte_lcore_is_enabled(core) == 0)
 			continue;
-
-		used_core[used] = core;
-		used++;
-		if (used >= 3)
+		if (master_core == UINT_MAX)
+			master_core = core;
+		else if (tx_core == UINT_MAX)
+			tx_core = core;
+		else if (rx_core == UINT_MAX)
+			rx_core = core;
+		else
 			break;
 	}
+	ctl_set_lcore(WORKER_STAT, master_core);
+	ctl_set_lcore(WORKER_RX, rx_core);
+	ctl_set_lcore(WORKER_TX, tx_core);
+	LOG_INFO("Lcore configuration: Master %u, TX %u, RX %u",
+				master_core, tx_core, rx_core);
+}
 
-	if (used == 1) {
-		lcore_param[used_core[0]].is_rx = true;
-		lcore_param[used_core[0]].is_tx = true;
-		return true;
-	} else if (used == 2) {
-		lcore_param[used_core[0]].is_rx = true;
-		lcore_param[used_core[1]].is_tx = true;
-		return true;
-	} else if (used == 3) {
-		lcore_param[used_core[0]].is_rx = true;
-		lcore_param[used_core[1]].is_tx = true;
-		lcore_param[used_core[2]].is_stat = true;
-		return false;
+static inline int
+__port_init(uint16_t port, struct rte_mempool *mbuf_pool)
+{
+	struct rte_eth_conf port_conf = port_conf_default;
+	const uint16_t rx_rings = 1, tx_rings = 1;
+	uint16_t nb_rxd = RX_RING_SIZE;
+	uint16_t nb_txd = TX_RING_SIZE;
+	int retval;
+	uint16_t q;
+	struct rte_eth_dev_info dev_info;
+	struct rte_eth_txconf txconf;
+
+	if (!rte_eth_dev_is_valid_port(port))
+		return -1;
+
+	retval = rte_eth_dev_info_get(port, &dev_info);
+	if (retval != 0) {
+		LOG_ERROR("Error during getting device (port %u) info: %s",
+				port, strerror(-retval));
+		return retval;
 	}
-	return false;
+
+	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
+		port_conf.txmode.offloads |=
+			DEV_TX_OFFLOAD_MBUF_FAST_FREE;
+
+	/* Configure the Ethernet device. */
+	retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
+	if (retval != 0)
+		return retval;
+
+	retval = rte_eth_dev_adjust_nb_rx_tx_desc(port, &nb_rxd, &nb_txd);
+	if (retval != 0)
+		return retval;
+
+	/* Allocate and set up 1 RX queue per Ethernet port. */
+	for (q = 0; q < rx_rings; q++) {
+		retval = rte_eth_rx_queue_setup(port, q, nb_rxd,
+				rte_eth_dev_socket_id(port), NULL, mbuf_pool);
+		if (retval < 0)
+			return retval;
+	}
+
+	txconf = dev_info.default_txconf;
+	txconf.offloads = port_conf.txmode.offloads;
+	/* Allocate and set up 1 TX queue per Ethernet port. */
+	for (q = 0; q < tx_rings; q++) {
+		retval = rte_eth_tx_queue_setup(port, q, nb_txd,
+				rte_eth_dev_socket_id(port), &txconf);
+		if (retval < 0)
+			return retval;
+	}
+
+	/* Start the Ethernet port. */
+	retval = rte_eth_dev_start(port);
+	if (retval < 0)
+		return retval;
+
+	/* Display the port MAC address. */
+	struct rte_ether_addr addr;
+	retval = rte_eth_macaddr_get(port, &addr);
+	if (retval != 0)
+		return retval;
+
+	printf("Port %u MAC: %02" PRIx8 " %02" PRIx8 " %02" PRIx8
+			   " %02" PRIx8 " %02" PRIx8 " %02" PRIx8 "\n",
+			port,
+			addr.addr_bytes[0], addr.addr_bytes[1],
+			addr.addr_bytes[2], addr.addr_bytes[3],
+			addr.addr_bytes[4], addr.addr_bytes[5]);
+
+	/* Enable RX in promiscuous mode for the Ethernet device. */
+	retval = rte_eth_promiscuous_enable(port);
+	if (retval != 0)
+		return retval;
+
+	return 0;
 }
 
 static int __lcore_main(__attribute__((__unused__))void *arg)
 {
-	unsigned lcoreid;
-	struct lcore_param *param;
-	struct measure_param measure = {
-		.sender = sender_id,
-		.mp = mp,
-	};
+	unsigned lcoreid, workerid;
+//	struct measure_param measure = {
+//		.sender = sender_id,
+//		.mp = mp,
+//	};
 
 	lcoreid = rte_lcore_id();
-//	if (lcoreid >= LCORE_MAX)
-//		return 0;
+	workerid = ctl_get_workerid(lcoreid);
 
-	LOG_INFO("lcore %u started.", lcoreid);
-	param = &lcore_param[lcoreid];
+	if (workerid == WORKER_MAX) {
+		LOG_INFO("Lcore %u is unused", lcoreid);
+		return;
+	}
 
-	if (param->is_stat) {
-		measure_thread_run(&measure);
-	} else if (param->is_rx && param->is_tx) {
-		rxtx_thread_run_rxtx(sender_id, receiver_id, mp,
-								tx_type, NULL, NULL);
-	} else if (param->is_rx) {
-		rxtx_thread_run_rx(receiver_id);
-	} else if (param->is_tx) {
-		rxtx_thread_run_tx(sender_id, mp, tx_type, NULL, NULL);
+	LOG_INFO("lcore %u (worker %u) started.", lcoreid, workerid);
+
+	if (workerid == WORKER_RX)
+		rxtx_thread_run_rx(0);
+	else if (workerid == WORKER_TX)
+		rxtx_thread_run_tx(0, mbuf_pool, tx_type, NULL, trace_file);
+	else {
+		LOG_INFO("Lcore %u is master lcore", lcoreid);
 	}
 
 	LOG_INFO("lcore %u finished.", lcoreid);
 	return 0;
 }
 
-static void __mempool_walk_func(struct rte_mempool *p,
-				void *arg)
-{
-	struct rte_mempool **target = arg;
-
-	LOG_INFO("mempool %s", p->name);
-	if (strncmp(p->name, CLIENT_MP_NAME_PREFIX,
-							strlen(CLIENT_MP_NAME_PREFIX)) == 0) {
-		if (*target == NULL)
-			*target = p;
-	}
-}
-
-static struct rte_mempool *__lookup_mempool(void)
-{
-	struct rte_mempool *p = NULL;
-
-	rte_mempool_walk(__mempool_walk_func, (void*)&p);
-	if (p == NULL) {
-		LOG_ERROR("Cannot find mempool");
-		return NULL;
-	}
-	return p;
-}
-
-static int __get_ring_dev(unsigned int id)
-{
-	char buf[10] = {'\0'};
-	struct rte_ring *tx_ring = NULL, *rx_ring = NULL;
-	struct rte_eth_conf conf;
-	int ret = 0;
-	int ring_portid;
-
-	rx_ring = rte_ring_lookup(__get_rxq_name(id));
-	if (rx_ring == NULL) {
-		LOG_ERROR("Cannot get RX ring for client %u", id);
-		return -1;
-	}
-
-	tx_ring = rte_ring_lookup(__get_txq_name(id));
-	if (tx_ring == NULL) {
-		LOG_ERROR("Cannot get TX ring for client %u", id);
-		return -1;
-	}
-
-	sprintf(buf, "dpdkr%d", id);
-	ring_portid = rte_eth_from_rings(buf, &rx_ring, 1, &tx_ring, 1, 0);
-	if (ring_portid < 0) {
-		LOG_ERROR("Failed to create dev from ring %u", id);
-		return -1;
-	}
-
-	/* Find mempool created by ovs */
-	if (mp == NULL) {
-		mp = __lookup_mempool();
-		if (mp != NULL) {
-			LOG_INFO("Found mempool %s", mp->name);
-		} else {
-			LOG_ERROR("Cannot find mempool for dpdkr%u", id);
-			return -1;
-		}
-	}
-
-	/* Setup interface */
-	memset(&conf, 0, sizeof(conf));
-	ret = rte_eth_dev_configure(ring_portid, 1, 1, &conf);
-	if (ret) {
-		LOG_ERROR("Failed to configure %s", buf);
-		return -1;
-	}
-
-	/* Setup tx queue */
-	ret = rte_eth_tx_queue_setup(ring_portid, 0, 2048, 0, NULL);
-	if (ret) {
-		LOG_ERROR("Failed to setup tx queue");
-		return -1;
-	}
-
-	/* Setup rx queue */
-	ret = rte_eth_rx_queue_setup(ring_portid, 0, 2048, 0,
-						NULL, mp);
-	if (ret) {
-		LOG_ERROR("Failed to setup rx queue");
-		return -1;
-	}
-	return ring_portid;
-}
-
 int main(int argc, char *argv[])
 {
 	int retval = 0;
 	int coreid = 0;
-	bool is_create_stat = false;
-	pthread_t tid;
-	struct measure_param param;
-	unsigned nb_ports, nb_lcores;
+//	bool is_create_stat = false;
+//	pthread_t tid;
+//	struct measure_param param;
+	unsigned nb_ports, portid;
 
 	if ((retval = rte_eal_init(argc, argv)) < 0) {
 		LOG_ERROR("Failed to initialize dpdk eal");
@@ -295,6 +253,9 @@ int main(int argc, char *argv[])
 		rte_exit(EXIT_FAILURE, "Error: number of ports must be 2\n");
 	if (rte_lcore_count() < 3)
 		rte_exit(EXIT_FAILURE, "Error: at least 3 cores are needed\n");
+	if (rte_lcore_count() > 3)
+		LOG_INFO("Only the first 3 cores will be used");
+	__set_lcore();
 
 //	pkt_seq_init(&pkt_seq);
 
@@ -302,40 +263,27 @@ int main(int argc, char *argv[])
 		rte_exit(EXIT_FAILURE, "Invalid command-line arguments\n");
 	}
 
+	/* Creates a new mempool in memory to hold the mbufs. */
+	mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS * nb_ports,
+		MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+
+	if (mbuf_pool == NULL)
+		rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
+
 	signal(SIGINT, ctl_signal_handler);
 	signal(SIGTERM, ctl_signal_handler);
 
-	if (__get_ring_dev(sender_id) < 0) {
-		rte_exit(EXIT_FAILURE, "Failed to get dpdkr device (sender)\n");
-	}
+	/* Initialize all ports. */
+	RTE_ETH_FOREACH_DEV(portid)
+		if (__port_init(portid, mbuf_pool) != 0)
+			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu16 "\n",
+					portid);
 
-	/* Start device */
-	if (rte_eth_dev_start(sender_id) < 0) {
-		rte_exit(EXIT_FAILURE, "Cannot start dpdkr device (sender)\n");
-	}
-
-	if (__get_ring_dev(receiver_id) < 0) {
-		rte_exit(EXIT_FAILURE, "Failed to get dpdkr device (receiver)\n");
-	}
-
-	/* Start device */
-	if (rte_eth_dev_start(receiver_id) < 0) {
-		rte_exit(EXIT_FAILURE, "Cannot start dpdkr device (receiver)\n");
-	}
-
-	is_create_stat = __set_lcore();
-
-	param.sender = sender_id;
-	param.mp = mp;
-
-	if (is_create_stat) {
-		if (pthread_create(&tid, NULL, (void *)measure_thread_run, &param)) {
-			rte_exit(EXIT_FAILURE, "Cannot create statistics thread\n");
-		}
-	}
-
-	LOG_INFO("Processing client, sender %d, receiver %d",
-					sender_id, receiver_id);
+//	if (is_create_stat) {
+//		if (pthread_create(&tid, NULL, (void *)measure_thread_run, &param)) {
+//			rte_exit(EXIT_FAILURE, "Cannot create statistics thread\n");
+//		}
+//	}
 
 	retval = rte_eal_mp_remote_launch(__lcore_main, NULL, CALL_MASTER);
 	if (retval < 0) {
@@ -349,13 +297,20 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (is_create_stat) {
-		pthread_join(tid, NULL);
+//	if (is_create_stat) {
+//		pthread_join(tid, NULL);
+//	}
+
+	RTE_ETH_FOREACH_DEV(portid) {
+		LOG_INFO("Closing port %d...", portid);
+		rte_eth_dev_stop(portid);
+		rte_eth_dev_close(portid);
+		LOG_INFO(" Done");
 	}
 
-	rte_eth_dev_stop(sender_id);
-	rte_eth_dev_stop(receiver_id);
+	if (trace_file)
+		zfree(trace_file);
+	LOG_INFO("Bye...");
 
-	LOG_INFO("Done.");
 	return 0;
 }

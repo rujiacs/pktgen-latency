@@ -63,8 +63,8 @@ static void __prepare_probe_mbuf(struct rte_mbuf **buf,
 	pkt->ol_flags = 0;
 	pkt->vlan_tci = 0;
 	pkt->vlan_tci_outer = 0;
-	pkt->l2_len = sizeof(struct ether_hdr);
-	pkt->l3_len = sizeof(struct ipv4_hdr);
+	pkt->l2_len = sizeof(struct rte_ether_hdr);
+	pkt->l3_len = sizeof(struct rte_ipv4_hdr);
 	*buf = pkt;
 	return;
 

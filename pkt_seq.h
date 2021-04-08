@@ -5,7 +5,6 @@
 #include <stdint.h>
 #include <arpa/inet.h>
 #include <rte_ether.h>
-#include <rte_eth_ctrl.h>
 #include <rte_ip.h>
 #include <rte_udp.h>
 #include <rte_tcp.h>
@@ -33,17 +32,17 @@ struct pkt_seq_info {
 #define PKT_PROBE_INITVAL 7
 
 struct tcpip_hdr {
-	struct ipv4_hdr ip;
-	struct tcp_hdr tcp;
+	struct rte_ipv4_hdr ip;
+	struct rte_tcp_hdr tcp;
 };
 
 struct udpip_hdr {
-	struct ipv4_hdr ip;
-	struct udp_hdr udp;
+	struct rte_ipv4_hdr ip;
+	struct rte_udp_hdr udp;
 };
 
 struct pkt_probe {
-	struct ether_hdr eth_hdr;
+	struct rte_ether_hdr eth_hdr;
 	struct udpip_hdr udpip_hdr;
 	uint32_t probe_idx;
 	uint32_t probe_magic;
@@ -68,7 +67,7 @@ struct pkt_probe {
 #define PKT_SEQ_PORT_DST 9321
 #define PKT_SEQ_TCP_SEQ 0x12345678
 #define PKT_SEQ_TCP_ACK 0x12345690
-#define PKT_SEQ_TCP_FLAGS TCP_ACK_FLAG
+#define PKT_SEQ_TCP_FLAGS RTE_TCP_ACK_FLAG
 #define PKT_SEQ_TCP_WINDOW 8192
 
 #define PKT_SEQ_PROBE_PKT_LEN 60

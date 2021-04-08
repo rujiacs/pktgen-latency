@@ -5,7 +5,9 @@
 
 static bool force_quit = false;
 
-static unsigned int worker_state[WORKER_MAX] = {STATE_UNINIT};
+static struct ctl_worker worker_state[WORKER_MAX] = {
+	{ .state = STATE_UNINIT, .lcoreid = UINT_MAX }
+};
 
 bool ctl_is_stop(void)
 {
@@ -26,12 +28,30 @@ unsigned int ctl_get_state(unsigned worker)
 	if (worker >= WORKER_MAX)
 		return STATE_UNINIT;
 
-	return worker_state[worker];
+	return worker_state[worker].state;
 }
 
 void ctl_set_state(unsigned worker, unsigned state)
 {
 	if (worker >= WORKER_MAX)
 		return;
-	worker_state[worker] = state;
+	worker_state[worker].state = state;
+}
+
+void ctl_set_lcore(unsigned worker, unsigned core)
+{
+	if (worker >= WORKER_MAX)
+		return;
+	worker_state[worker].lcoreid = core;
+}
+
+unsigned ctl_get_workerid(unsigned lcoreid)
+{
+	unsigned i = 0;
+
+	for (i = 0; i < WORKER_MAX; i++) {
+		if (worker_state[i].lcoreid == lcoreid)
+			return i;
+	}
+	return WORKER_MAX;
 }

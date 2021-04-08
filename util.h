@@ -1,8 +1,6 @@
 #ifndef _PKTGEN_UTIL_H_
 #define _PKTGEN_UTIL_H_
 
-#define _GNU_SOURCE
-
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -37,6 +35,13 @@
 #endif
 
 #define PAGE_SIZE 4096
+
+
+#define zfree(p) do { \
+	if (p) { \
+		free(p); \
+		p = NULL; \
+	}} while (0)
 
 static inline unsigned int roundup_2(unsigned int num)
 {
