@@ -4,14 +4,28 @@
 #include <signal.h>
 
 static bool force_quit = false;
+static uint64_t rx_quit_cycle = 0;
 
 static struct ctl_worker worker_state[WORKER_MAX] = {
 	{ .state = STATE_UNINIT, .lcoreid = UINT_MAX }
 };
 
-bool ctl_is_stop(void)
+bool ctl_is_stop(unsigned workid)
 {
-	return force_quit;
+	if (workerid == WORKER_TX)
+		return force_quit;
+	if (workerid == WORKER_RX) {
+		if (force_quit) {
+			if (rx_quit_cycle == 0) {
+				rx_quit_cycle = rte_get_tsc_cycles() +
+						rte_get_tsc_hz() * RX_QUIT_DELAY / 1000;
+			}
+
+			if (rx_quit_cycle <= rte_get_tsc_cycles())
+				return true;
+		}
+	}
+	return false;
 }
 
 void ctl_signal_handler(int signo)

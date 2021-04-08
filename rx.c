@@ -94,7 +94,7 @@ static int __process_rx(int portid, pcap_dumper_t *pcapout)
 void rx_thread_run_rx(int portid)
 {
 	/* waiting for stat thread */
-	while (ctl_get_state(WORKER_STAT) == STATE_UNINIT && !ctl_is_stop()) {}
+	while (ctl_get_state(WORKER_STAT) == STATE_UNINIT && !ctl_is_stop(WORKER_RX)) {}
 
 	if (ctl_get_state(WORKER_STAT) == STATE_STOPPED
 					|| ctl_get_state(WORKER_STAT) == STATE_ERROR)
@@ -122,7 +122,7 @@ void rx_thread_run_rx(int portid)
 
 	ctl_set_state(WORKER_RX, STATE_INITED);
 
-	while (!ctl_is_stop()) {
+	while (!ctl_is_stop(WORKER_RX)) {
 		if (__process_rx(portid, pcapout) < 0) {
 			LOG_ERROR("RX error!");
 			break;

@@ -20,6 +20,9 @@ struct ctl_worker {
 	unsigned lcoreid;
 };
 
+// ms
+#define RX_QUIT_DELAY	200
+
 bool ctl_is_stop(void);
 
 void ctl_signal_handler(int signo);

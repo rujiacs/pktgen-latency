@@ -230,7 +230,7 @@ void tx_thread_run_tx(int portid,
 //	unsigned int tx_retry = 0;
 
 	/* waiting for stat thread */
-	while (ctl_get_state(WORKER_STAT) == STATE_UNINIT && !ctl_is_stop()) {}
+	while (ctl_get_state(WORKER_STAT) == STATE_UNINIT && !ctl_is_stop(WORKER_TX)) {}
 
 	if (ctl_get_state(WORKER_STAT) == STATE_STOPPED
 					|| ctl_get_state(WORKER_STAT) == STATE_ERROR)
@@ -255,7 +255,7 @@ void tx_thread_run_tx(int portid,
 
 	ctl_set_state(WORKER_TX, STATE_INITED);
 
-	while (!ctl_is_stop()) {
+	while (!ctl_is_stop(WORKER_TX)) {
 		/* TX */
 		if (__process_tx(portid, &tx_ctl) < 0) {
 			LOG_ERROR("TX error!");
