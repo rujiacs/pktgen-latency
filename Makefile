@@ -5,7 +5,7 @@
 APP = pktgen-latency
 
 # all source are stored in SRCS-y
-SRCS-y := main.c control.c measure.c pkt_seq.c rate.c rxtx.c stat.c
+SRCS-y := main.c control.c pkt_seq.c rate.c rx.c tx.c stat.c
 
 # Build using pkg-config variables if possible
 ifeq ($(shell pkg-config --exists libdpdk && echo 0),0)
