@@ -95,6 +95,9 @@ static int __parse_options(int argc, char *argv[])
 	else if (is_random) {
 		tx_type = TX_TYPE_RANDOM;
 	}
+	else if (is_trace) {
+		tx_type = TX_TYPE_5TUPLE_TRACE;
+	}
 	else
 		tx_type = TX_TYPE_SINGLE;
 

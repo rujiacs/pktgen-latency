@@ -29,7 +29,16 @@ static struct tx_ctl tx_ctl = {
 	.tx_mp = NULL,
     .nb_trace = 0,
     .trace_iter = 0,
-	.trace = NULL,
+	.trace = {
+		{
+			.src_ip = 0,
+			.dst_ip = 0, 
+			.src_port = 0,
+			.dst_port = 0,
+			.proto = 0,
+			.pkt_len = 0,
+		}
+	},
 	.tx_rate = {
 		.rate_bps = 0,
 		.cycle_per_byte = 0,
@@ -88,12 +97,12 @@ static inline void __pkt_setup(struct rte_mbuf *m, unsigned tx_type)
 	pkt_seq_fill_mbuf(m, info);
 }
 
-static bool __load_tuple_trace(const char *filename)
+static bool __load_tuple_traces(const char *filename)
 {
     FILE *fp = fopen(filename, "r");
     struct pkt_seq_info *tuples = tx_ctl.trace;
     unsigned cnt = 0;
-    unsigned tmp0, tmp1;
+    unsigned sport, dport, proto, tmp0, tmp1;
 
     if (!fp) {
         LOG_ERROR("Failed to open trace file %s", filename);
@@ -105,12 +114,14 @@ static bool __load_tuple_trace(const char *filename)
 
         ret = fscanf(fp, "%u %u %u %u %u %u %u\n",
                         &(tuples->src_ip), &(tuples->dst_ip),
-                        &(tuples->src_port), &(tuples->dst_port),
-                        &(tuples->proto), &tmp0, &tmp1);
+                        &sport, &dport, &proto, &tmp0, &tmp1);
         if (ret != 7) {
             LOG_ERROR("Failed to read tuples[%u]", cnt);
             break;
         }
+		tuples->src_port = sport;
+		tuples->dst_port = dport;
+		tuples->proto = proto;
         tuples->pkt_len = tx_ctl.pkt_info.pkt_len;
         cnt++;
         tuples++;
@@ -121,7 +132,7 @@ static bool __load_tuple_trace(const char *filename)
     }
 
     if (cnt > 0) {
-        LOG_INFO("Load %u traces", cut);
+        LOG_INFO("Load %u traces", cnt);
         tx_ctl.nb_trace = cnt;
         fclose(fp);
         return true;
@@ -302,6 +313,8 @@ void tx_thread_run_tx(int portid,
 		return;
 	}
 
+	LOG_INFO("mode %u, file %s", tx_type, filename);
+
 	if (!__tx_init(tx_type, mp, seq, filename)) {
 		LOG_ERROR("Failed to initialize TX");
 		ctl_set_state(WORKER_TX, STATE_ERROR);
@@ -321,9 +334,6 @@ void tx_thread_run_tx(int portid,
 			break;
 		}
 	}
-
-	if (tx_ctl.trace != NULL)
-		fclose(tx_ctl.trace);
 
 	LOG_INFO("TX thread quit.");
 	ctl_set_state(WORKER_TX, STATE_STOPPED);

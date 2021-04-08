@@ -78,6 +78,9 @@ void rate_wait_for_time(uint64_t next_cycle)
 	if (cur >= next_cycle)
 		return;
 
+	if (cycle_per_sec == 0) {
+		cycle_per_sec = rte_get_tsc_hz();
+	}
 	time = (next_cycle - cur) / (cycle_per_sec / USEC_PER_SEC);
 	usleep(time);
 }
