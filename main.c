@@ -148,6 +148,7 @@ __port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 		return retval;
 	}
 
+	LOG_INFO("TX_OFFLOAD_CAPA %lx", dev_info.tx_offload_capa);
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		port_conf.txmode.offloads |=
 			DEV_TX_OFFLOAD_MBUF_FAST_FREE;

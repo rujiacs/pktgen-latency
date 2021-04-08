@@ -109,13 +109,13 @@ void rx_thread_run_rx(int portid)
 	pcap_dumper_t *pcapout =NULL;
 
 	if (rx_ctl.dump_to_pcap) {
-		pcapout = pcap_dump_open(pcap_open_dead(DLT_EN10MB, 1600), pcapfile);
+		pcapout = pcap_dump_open(pcap_open_dead(DLT_EN10MB, 1600), rx_ctl.pcapfile);
 		if (!pcapout) {
-			LOG_ERROR("Failed to open output pcap file %s", pcapfile);
+			LOG_ERROR("Failed to open output pcap file %s", rx_ctl.pcapfile);
 			ctl_set_state(WORKER_RX, STATE_ERROR);
 			return;
 		}
-		LOG_INFO("All packet will be written to pcap file %s", pcapfile);
+		LOG_INFO("All packet will be written to pcap file %s", rx_ctl.pcapfile);
 	}
 
 	LOG_INFO("rx running on lcore %u", rte_lcore_id());		
