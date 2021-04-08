@@ -53,18 +53,6 @@ void pkt_seq_init(struct pkt_seq_info *info)
 //	info->seq_cnt = PKT_SEQ_CNT;
 }
 
-static uint16_t __checksum_16(const void *data, uint32_t len)
-{
-	uint32_t crc32 = 0;
-
-	crc32 = rte_hash_crc(data, len, 0);
-
-	crc32 = (crc32 & 0xffff) + (crc32 >> 16);
-	crc32 = (crc32 & 0xffff) + (crc32 >> 16);
-
-	return ~((uint16_t)crc32);
-}
-
 static void __setup_ip_hdr(struct rte_ipv4_hdr *ip)
 {
 	/* Setup IPv4 header */
@@ -75,14 +63,12 @@ static void __setup_ip_hdr(struct rte_ipv4_hdr *ip)
 	ip->packet_id = 0;
 
 	/* Compute IPv4 header checksum */
-	ip->hdr_checksum = __checksum_16(ip, sizeof(struct rte_ipv4_hdr));
+	ip->hdr_checksum = rte_ipv4_cksum(ip);
 }
 
 void pkt_seq_setup_tcpip(struct pkt_seq_info *info,
 				struct tcpip_hdr *tcpip)
 {
-	uint16_t tlen = 0;
-
 	memset(tcpip, 0, sizeof(struct tcpip_hdr));
 
 	/* Setup TCP header */
@@ -99,13 +85,15 @@ void pkt_seq_setup_tcpip(struct pkt_seq_info *info,
 	tcpip->ip.src_addr = rte_cpu_to_be_32(info->src_ip);
 	tcpip->ip.dst_addr = rte_cpu_to_be_32(info->dst_ip);
 	tcpip->ip.total_length = rte_cpu_to_be_16(info->pkt_len
-								- sizeof(struct rte_ether_hdr)
-								- sizeof(struct rte_ipv4_hdr));
+								- sizeof(struct rte_ether_hdr));
 	tcpip->ip.next_proto_id = IPPROTO_TCP;
 
 	/* Calculate tcp checksum */
-	tlen = info->pkt_len - sizeof(struct rte_ether_hdr);
-	tcpip->tcp.cksum = __checksum_16(tcpip, tlen);
+//	tlen = info->pkt_len - sizeof(struct rte_ether_hdr);
+	tcpip->tcp.cksum = rte_ipv4_udptcp_cksum(
+					&(tcpip->ip), (const void *)&(tcpip->tcp));
+
+	LOG_DEBUG("IP len %u", (info->pkt_len - sizeof(struct rte_ether_hdr)));
 
 	/* Setup remaining part of ip header */
 	__setup_ip_hdr(&tcpip->ip);
@@ -185,7 +173,6 @@ void pkt_seq_fill_mbuf(struct rte_mbuf *mbuf, struct pkt_seq_info *info)
 	struct rte_ether_hdr *eth_hdr;
 	uint8_t *payload = NULL;
 	unsigned len = 0;
-	uint32_t *crc = NULL;
 
 	if (info == NULL) {
 		LOG_ERROR("Wrong data to fill into mbuf");
@@ -199,13 +186,16 @@ void pkt_seq_fill_mbuf(struct rte_mbuf *mbuf, struct pkt_seq_info *info)
 	if (info->proto == IPPROTO_TCP) {
 		len = info->pkt_len - sizeof(struct rte_ether_hdr)
 							- sizeof(struct tcpip_hdr);
+		payload = rte_pktmbuf_mtod_offset(mbuf, uint8_t *,
+						sizeof(struct rte_ether_hdr) + sizeof(struct tcpip_hdr));
 	} else {
 		len = info->pkt_len - sizeof(struct rte_ether_hdr)
 							- sizeof(struct udpip_hdr);
+		payload = rte_pktmbuf_mtod_offset(mbuf, uint8_t *,
+						sizeof(struct rte_ether_hdr) + sizeof(struct udpip_hdr));
 	}
-	payload = rte_pktmbuf_mtod_offset(mbuf, uint8_t *,
-					sizeof(struct rte_ether_hdr) + sizeof(struct tcpip_hdr));
 	memset(payload, 0, len);
+	LOG_DEBUG("payload len %u", len);
 
 	/* Setup TCP/UDP+IP */
 	if (info->proto == IPPROTO_TCP) {
