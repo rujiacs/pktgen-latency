@@ -61,7 +61,7 @@ struct pkt_probe {
 #define PKT_SEQ_IP_SRC IPv4(192,68,0,12)
 #define PKT_SEQ_IP_DST IPv4(192,68,0,21)
 
-#define PKT_SEQ_PKT_LEN 60
+#define PKT_SEQ_PKT_LEN 124
 #define PKT_SEQ_PROTO IPPROTO_TCP
 #define PKT_SEQ_PORT_SRC 9312
 #define PKT_SEQ_PORT_DST 9321

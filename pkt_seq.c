@@ -192,8 +192,8 @@ void pkt_seq_fill_mbuf(struct rte_mbuf *mbuf, struct pkt_seq_info *info)
 		return;
 	}
 
-	mbuf->pkt_len = info->pkt_len + ETH_CRC_LEN;
-	mbuf->data_len = info->pkt_len + ETH_CRC_LEN;
+	mbuf->pkt_len = info->pkt_len;
+	mbuf->data_len = info->pkt_len;
 
 	/* Setup payload */
 	if (info->proto == IPPROTO_TCP) {
@@ -229,10 +229,10 @@ void pkt_seq_fill_mbuf(struct rte_mbuf *mbuf, struct pkt_seq_info *info)
 	rte_ether_addr_copy(&mac_dst, &eth_hdr->d_addr);
 	eth_hdr->ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
 
-	/* Setup Eth FCS */
-	crc = rte_pktmbuf_mtod_offset(mbuf, uint32_t*, info->pkt_len);
-	*crc = rte_hash_crc(rte_pktmbuf_mtod(mbuf, void *),
-					info->pkt_len, 0);
+	// /* Setup Eth FCS */
+	// crc = rte_pktmbuf_mtod_offset(mbuf, uint32_t*, info->pkt_len);
+	// *crc = rte_hash_crc(rte_pktmbuf_mtod(mbuf, void *),
+	// 				info->pkt_len, 0);
 }
 
 int pkt_seq_get_idx(struct rte_mbuf *pkt, uint32_t *idx)
