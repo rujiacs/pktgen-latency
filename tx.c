@@ -10,7 +10,7 @@
 
 #include "util.h"
 #include "control.h"
-#include "rxtx.h"
+#include "tx.h"
 #include "stat.h"
 #include "pkt_seq.h"
 #include "rate.h"
@@ -38,7 +38,7 @@ static struct tx_ctl tx_ctl = {
 	.mbuf_tbl = {NULL},
 };
 
-void rxtx_set_rate(const char *rate_str)
+void tx_set_rate(const char *rate_str)
 {
 	rate_set_rate(rate_str, &tx_ctl.tx_rate);
 }
@@ -83,7 +83,7 @@ static bool __tx_init(unsigned tx_type, struct rte_mempool *mp,
 	tx_ctl.tx_type = tx_type;
 
 	if (tx_ctl.tx_rate.rate_bps == 0)
-		rxtx_set_rate(TX_RATE_DEF);
+		tx_set_rate(TX_RATE_DEF);
 
 	__set_tx_pkt_info(seq);
 
@@ -226,76 +226,7 @@ static int __process_tx(int portid __rte_unused, struct tx_ctl *ctl)
 	return 0;
 }
 
-
-/**** RX ****/
-struct rte_mbuf *rx_buf[RX_BURST] = {NULL};
-
-//static void __rx_stat(struct rte_mbuf *pkt, uint64_t recv_cyc)
-//{
-//	uint32_t probe_idx = 0;
-//	int ret = 0;
-//
-//	if (pkt_seq_get_idx(pkt, &probe_idx) < 0) {
-//		LOG_DEBUG("RX packet");
-//		stat_update_rx(pkt->data_len);
-//	} else {
-//		stat_update_rx_probe(probe_idx, pkt->data_len, recv_cyc);
-//		LOG_DEBUG("RX packet %u, len %u, recv_cyc %lu",
-//						probe_idx, pkt->data_len,
-//						(unsigned long)recv_cyc);
-//	}
-//}
-
-static int __process_rx(int portid)
-{
-	uint16_t nb_rx, i = 0;
-//	uint64_t recv_cyc = 0;
-
-//	recv_cyc = rte_get_tsc_cycles();
-	nb_rx = rte_eth_rx_burst(portid, 0, rx_buf, RX_BURST);
-	if (nb_rx == 0)
-		return 0;
-
-	for (i = 0; i < nb_rx; i++) {
-//		__rx_stat(rx_buf[i], recv_cyc);
-		stat_update_rx(rx_buf[i]->data_len);
-		rte_pktmbuf_free(rx_buf[i]);
-	}
-	return 0;
-}
-
-void rxtx_thread_run_rx(int portid)
-{
-	/* waiting for stat thread */
-	while (ctl_get_state(WORKER_STAT) == STATE_UNINIT && !ctl_is_stop()) {}
-
-	if (ctl_get_state(WORKER_STAT) == STATE_STOPPED
-					|| ctl_get_state(WORKER_STAT) == STATE_ERROR)
-		return;
-
-	if (portid < 0) {
-		LOG_ERROR("Invalid parameters, portid %d", portid);
-		ctl_set_state(WORKER_RX, STATE_ERROR);
-		return;
-	}
-
-	LOG_INFO("rx running on lcore %u", rte_lcore_id());
-
-	ctl_set_state(WORKER_RX, STATE_INITED);
-
-	while (!ctl_is_stop()) {
-		if (__process_rx(portid) < 0) {
-			LOG_ERROR("RX error!");
-			break;
-		}
-	}
-
-	ctl_set_state(WORKER_RX, STATE_STOPPED);
-}
-
-#define MAX_RETRY 3
-
-void rxtx_thread_run_tx(int portid,
+void tx_thread_run_tx(int portid,
 				struct rte_mempool *mp, unsigned tx_type,
 				struct pkt_seq_info *seq, const char *filename)
 {
@@ -334,21 +265,6 @@ void rxtx_thread_run_tx(int portid,
 			LOG_ERROR("TX error!");
 			break;
 		}
-//		ret = __process_tx(portid, mp, seq, true, 0);
-//		if (ret == -ERANGE || ret == -ENOMEM) {
-//			LOG_ERROR("TX error!");
-//			break;
-//		}
-//		else if (ret == -EAGAIN) {
-//			if (tx_retry >= MAX_RETRY) {
-//				LOG_ERROR("Reached the max retry times, TX exit.");
-//				break;
-//			} else {
-//				tx_retry++;
-//			}
-//		} else {
-//			tx_retry = 0;
-//		}
 	}
 
 	if (tx_ctl.trace != NULL)
@@ -356,69 +272,3 @@ void rxtx_thread_run_tx(int portid,
 
 	ctl_set_state(WORKER_TX, STATE_STOPPED);
 }
-
-// void rxtx_thread_run_rxtx(int sender, int recv,
-// 				struct rte_mempool *mp, unsigned tx_type,
-// 				struct pkt_seq_info *seq __rte_unused,
-// 				const char *filename __rte_unused)
-// {
-// //	int ret = 0;
-// 	bool is_tx_err = false, is_rx_err = false;
-// //	unsigned int tx_retry = 0;
-// //	uint64_t stop_cycle = 0;
-
-// 	/* waiting for stat thread */
-// 	while (ctl_get_state(WORKER_STAT) == STATE_UNINIT && !ctl_is_stop()) {}
-
-// 	if (ctl_get_state(WORKER_STAT) == STATE_ERROR ||
-// 					ctl_get_state(WORKER_STAT) == STATE_STOPPED)
-// 		return;
-
-// 	if (sender < 0 || recv < 0 || mp == NULL || tx_type >= TX_TYPE_MAX) {
-// 		LOG_ERROR("Invalid parameters, sender %d, recv %d, tx type %u",
-// 						sender, recv, tx_type);
-// 		ctl_set_state(WORKER_TX, STATE_ERROR);
-// 		ctl_set_state(WORKER_RX, STATE_ERROR);
-// 		return;
-// 	}
-
-// 	if (!__tx_init(tx_type, mp, seq, filename)) {
-// 		LOG_ERROR("Failed to initialize TX");
-// 		ctl_set_state(WORKER_TX, STATE_ERROR);
-// 		is_tx_err = true;
-// 	}
-
-// 	LOG_INFO("tx running on lcore %u", rte_lcore_id());
-
-// 	ctl_set_state(WORKER_TX, STATE_INITED);
-// 	ctl_set_state(WORKER_RX, STATE_INITED);
-
-// 	while (!ctl_is_stop()) {
-// 		/* TX */
-// 		if (!is_tx_err) {
-// //			cycle = rte_get_tsc_cycles();
-// 			if (__process_tx(sender, &tx_ctl) < 0) {
-// 				is_tx_err = true;
-// 				LOG_ERROR("TX error!");
-// 			}
-// 		}
-
-// 		/* RX */
-// 		if (!is_rx_err) {
-// 			if (__process_rx(recv) < 0) {
-// 				LOG_ERROR("RX error!");
-// 				is_rx_err = true;
-// 			}
-// 		}
-
-// 		/* Check state */
-// 		if (is_tx_err && is_rx_err)
-// 			break;
-// 	}
-
-// 	if (tx_ctl.trace != NULL)
-// 		fclose(tx_ctl.trace);
-
-// 	ctl_set_state(WORKER_TX, STATE_STOPPED);
-// 	ctl_set_state(WORKER_RX, STATE_STOPPED);
-// }

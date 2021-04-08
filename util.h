@@ -16,6 +16,14 @@
 #include <sys/syscall.h>
 #include <sys/resource.h>
 
+#define DEFAULT_PKT_BURST 16
+#define RX_BURST DEFAULT_PKT_BURST
+#define TX_BURST DEFAULT_PKT_BURST
+#define MAX_MBUF_PER_PORT 2048
+#define DEFAULT_PRIV_SIZE 0
+
+#define FILENAME_MAX 100
+
 //#define DEBUG_PRINT
 
 #define LOG_ERROR(format, ...) \

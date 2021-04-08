@@ -13,7 +13,8 @@
 
 #include "util.h"
 #include "stat.h"
-#include "rxtx.h"
+#include "rx.h"
+#include "tx.h"
 #include "control.h"
 #include "pkt_seq.h"
 #include "measure.h"
@@ -44,7 +45,8 @@ static void __usage(const char *progname)
 	LOG_INFO("Usage: %s [<EAL args>] -- ", progname);
 	LOG_INFO("\t\t-r <TX rate (default 0)>");
 	LOG_INFO("\t\t-t <5-tuple trace file>");
-	LOG_INFO("\t\t-o <output file prefix>");
+	LOG_INFO("\t\t-o <output pcap file>");
+	LOG_INFO("\t\t-l <latency file>");
 	LOG_INFO("\t\t-R Random pakcets");
 }
 
@@ -56,7 +58,7 @@ static int __parse_options(int argc, char *argv[])
 	bool is_trace = false, is_random = false;
 
 	progname = argv[0];
-	while ((opt = getopt(argc, argvopt, "t:r:o:R")) != -1) {
+	while ((opt = getopt(argc, argvopt, "t:r:l:o:R")) != -1) {
 		switch(opt) {
 			case 't':
 				trace_file = strdup(optarg);
@@ -69,10 +71,13 @@ static int __parse_options(int argc, char *argv[])
 				is_trace = true;
 				break;
 			case 'r':
-				rxtx_set_rate(optarg);
+				tx_set_rate(optarg);
+				break;
+			case 'l':
+				stat_set_output(optarg);
 				break;
 			case 'o':
-				stat_set_output(optarg);
+				rx_set_pcap_output(optarg);
 				break;
 			case 'R':
 				is_random = true;
@@ -219,9 +224,9 @@ static int __lcore_main(__attribute__((__unused__))void *arg)
 	LOG_INFO("lcore %u (worker %u) started.", lcoreid, workerid);
 
 	if (workerid == WORKER_RX)
-		rxtx_thread_run_rx(1);
+		rx_thread_run_rx(1);
 	else if (workerid == WORKER_TX)
-		rxtx_thread_run_tx(0, mbuf_pool, tx_type, NULL, trace_file);
+		tx_thread_run_tx(0, mbuf_pool, tx_type, NULL, trace_file);
 	else {
 		stat_thread_run();
 	}
