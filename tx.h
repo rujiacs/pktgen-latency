@@ -18,7 +18,10 @@ enum {
 	TX_TYPE_MAX,
 };
 
+
+
 #define MBUF_SIZE (RTE_MBUF_DEFAULT_BUF_SIZE + DEFAULT_PRIV_SIZE)
+#define TUPLE_TRACE_MAX 65535
 
 struct tx_ctl {
 	unsigned int tx_type;
@@ -28,7 +31,9 @@ struct tx_ctl {
 	struct pkt_seq_info pkt_info;
 
 	/* fot 5-tuple trace */
-	FILE *trace;
+	unsigned nb_trace;
+	unsigned trace_iter;
+	struct pkt_seq_info trace[TUPLE_TRACE_MAX];
 
 	struct rate_ctl tx_rate;
 

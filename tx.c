@@ -27,6 +27,8 @@ struct pkt_setup_param {
 static struct tx_ctl tx_ctl = {
 	.tx_type = TX_TYPE_SINGLE,
 	.tx_mp = NULL,
+    .nb_trace = 0,
+    .trace_iter = 0,
 	.trace = NULL,
 	.tx_rate = {
 		.rate_bps = 0,
@@ -59,18 +61,75 @@ static void __set_tx_pkt_info(struct pkt_seq_info *info)
 	}
 }
 
-static inline void __pkt_setup(struct rte_mbuf *m, unsigned tx_type,
-				struct pkt_seq_info *info)
+static inline void __pkt_setup(struct rte_mbuf *m, unsigned tx_type)
 {
-	if (tx_type == TX_TYPE_RANDOM) {
-		uint64_t val = 0;
+    struct pkt_seq_info *info = NULL;
+    uint64_t val = 0;
 
-		val = rte_rand();
-		info->src_ip = val & 0xffffffff;
-		info->dst_ip = (val >> 32) &0xffffffff;
-	}
+    switch (tx_type) {
+        case TX_TYPE_RANDOM:
+            info = &(tx_ctl.pkt_info);
+            val = rte_rand();
+            info->src_ip = val & 0xffffffff;
+		    info->dst_ip = (val >> 32) &0xffffffff;
+            break;
+        case TX_TYPE_5TUPLE_TRACE:
+            info = &(tx_ctl.trace[tx_ctl.trace_iter]);
+            tx_ctl.trace_iter ++;
+            if (tx_ctl.trace_iter == tx_ctl.nb_trace)
+                tx_ctl.trace_iter = 0;
+            break;
+        case TX_TYPE_SINGLE:
+        default:
+            info = &(tx_ctl.pkt_info);
+            break;
+    }
 
 	pkt_seq_fill_mbuf(m, info);
+}
+
+static bool __load_tuple_trace(const char *filename)
+{
+    FILE *fp = fopen(filename, "r");
+    struct pkt_seq_info *tuples = tx_ctl.trace;
+    unsigned cnt = 0;
+    unsigned tmp0, tmp1;
+
+    if (!fp) {
+        LOG_ERROR("Failed to open trace file %s", filename);
+        return false;
+    }
+
+    while (!feof(fp)) {
+        int ret = 0;
+
+        ret = fscanf(fp, "%u %u %u %u %u %u %u\n",
+                        &(tuples->src_ip), &(tuples->dst_ip),
+                        &(tuples->src_port), &(tuples->dst_port),
+                        &(tuples->proto), &tmp0, &tmp1);
+        if (ret != 7) {
+            LOG_ERROR("Failed to read tuples[%u]", cnt);
+            break;
+        }
+        tuples->pkt_len = tx_ctl.pkt_info.pkt_len;
+        cnt++;
+        tuples++;
+        if (cnt == TUPLE_TRACE_MAX) {
+            LOG_INFO("Only support up to %u traces", TUPLE_TRACE_MAX);
+            break;
+        }
+    }
+
+    if (cnt > 0) {
+        LOG_INFO("Load %u traces", cut);
+        tx_ctl.nb_trace = cnt;
+        fclose(fp);
+        return true;
+    }
+
+    LOG_ERROR("No trace are found");
+    fclose(fp);
+    return false;
 }
 
 static bool __tx_init(unsigned tx_type, struct rte_mempool *mp,
@@ -99,8 +158,8 @@ static bool __tx_init(unsigned tx_type, struct rte_mempool *mp,
 //		rte_mempool_obj_iter(tx_ctl.tx_mp, __pkt_setup, &param);
 
 	} else if (tx_type == TX_TYPE_5TUPLE_TRACE) {
-		LOG_INFO("TODO: load file %s", filename);
-		return false;
+		LOG_INFO("Load trace file %s", filename);
+        return __load_tuple_traces(filename);
 	}
 
 	return true;
@@ -198,7 +257,7 @@ static int __process_tx(int portid __rte_unused, struct tx_ctl *ctl)
 			cnt = TX_BURST;
 
 			for (i = 0; i < cnt; i++) {
-				__pkt_setup(pkts[i], ctl->tx_type, &ctl->pkt_info);
+				__pkt_setup(pkts[i], ctl->tx_type);
 			}
 
 			ctl->len = TX_BURST;
