@@ -15,7 +15,7 @@
 #include "rx.h"
 #include "stat.h"
 
-static struct rx_ctl rx_ctl {
+static struct rx_ctl rx_ctl = {
 	.dump_to_pcap = false,
 	.pcapfile = {'\0'},
 	.rx_buf = {NULL}
