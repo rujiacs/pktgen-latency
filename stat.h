@@ -19,7 +19,7 @@ enum {
 enum {
 	STAT_IDX_RX = 0,
 	STAT_IDX_TX,
-	STAT_IDX_TX_PROBE,
+//	STAT_IDX_TX_PROBE,
 	STAT_IDX_MAX
 };
 
@@ -38,13 +38,15 @@ void stat_finish(uint64_t start_cycle);
 
 void stat_update_rx(uint64_t bytes);
 
-void stat_update_rx_probe(uint32_t idx, uint64_t bytes, uint64_t cycle);
+//void stat_update_rx_probe(uint32_t idx, uint64_t bytes, uint64_t cycle);
 
 void stat_update_tx(uint64_t bytes, unsigned int pkts);
 
-void stat_update_tx_probe(uint32_t idx, uint64_t bytes, uint64_t cycle);
+//void stat_update_tx_probe(uint32_t idx, uint64_t bytes, uint64_t cycle);
 
 void stat_set_output(const char *prefix);
+
+void stat_thread_run(void);
 
 //uint32_t stat_get_free_idx(void);
 

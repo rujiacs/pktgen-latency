@@ -1,6 +1,7 @@
 #include "util.h"
 #include "control.h"
 #include "stat.h"
+#include "rate.h"
 
 #include <rte_lcore.h>
 #include <rte_cycles.h>
@@ -12,8 +13,8 @@ static struct stat_info port_stat[STAT_IDX_MAX];
 #define PREFIX_MAX 100
 
 static char output_prefix[PREFIX_MAX] = {'\0'};
-static FILE *fout_rx = NULL;
-static FILE *fout_tx = NULL;
+//static FILE *fout_rx = NULL;
+//static FILE *fout_tx = NULL;
 
 static uint64_t cycle_per_sec = 0;
 static uint64_t next_dump_cycle = 0;
@@ -35,14 +36,14 @@ void stat_update_rx(uint64_t bytes)
 	__update_stat(&port_stat[STAT_IDX_RX], bytes);
 }
 
-void stat_update_rx_probe(uint32_t idx, uint64_t bytes, uint64_t cycle)
-{
-	if (fout_rx != NULL)
-		fprintf(fout_rx, "%u,%u,%lu\n", idx, RECORD_RX, cycle);
-
-	LOG_DEBUG("RX probe packet %u at %lu", idx, (unsigned long)cycle);
-	__update_stat(&port_stat[STAT_IDX_RX], bytes);
-}
+//void stat_update_rx_probe(uint32_t idx, uint64_t bytes, uint64_t cycle)
+//{
+//	if (fout_rx != NULL)
+//		fprintf(fout_rx, "%u,%u,%lu\n", idx, RECORD_RX, cycle);
+//
+//	LOG_DEBUG("RX probe packet %u at %lu", idx, (unsigned long)cycle);
+//	__update_stat(&port_stat[STAT_IDX_RX], bytes);
+//}
 
 void stat_update_tx(uint64_t bytes, unsigned int pkts)
 {
@@ -50,13 +51,13 @@ void stat_update_tx(uint64_t bytes, unsigned int pkts)
 	port_stat[STAT_IDX_TX].stat_pkts += pkts;
 }
 
-void stat_update_tx_probe(uint32_t idx, uint64_t bytes, uint64_t cycle)
-{
-	if (fout_tx != NULL)
-		fprintf(fout_tx, "%u,%u,%lu\n", idx, RECORD_TX, cycle);
-
-	__update_stat(&port_stat[STAT_IDX_TX_PROBE], bytes);
-}
+//void stat_update_tx_probe(uint32_t idx, uint64_t bytes, uint64_t cycle)
+//{
+//	if (fout_tx != NULL)
+//		fprintf(fout_tx, "%u,%u,%lu\n", idx, RECORD_TX, cycle);
+//
+//	__update_stat(&port_stat[STAT_IDX_TX_PROBE], bytes);
+//}
 
 static inline void __process_stat(struct stat_info *stat,
 //				double *bps, double *pps)
@@ -89,10 +90,12 @@ static void __summary_stat(uint64_t cycles)
 	sec = (double)cycles / cycle_per_sec;
 	rx_bytes = port_stat[STAT_IDX_RX].stat_bytes;
 	rx_pkts = port_stat[STAT_IDX_RX].stat_pkts;
-	tx_bytes = port_stat[STAT_IDX_TX].stat_bytes
-				+ port_stat[STAT_IDX_TX_PROBE].stat_bytes;
-	tx_pkts = port_stat[STAT_IDX_TX].stat_pkts
-				+ port_stat[STAT_IDX_TX_PROBE].stat_pkts;
+	tx_bytes = port_stat[STAT_IDX_TX].stat_bytes;
+	tx_pkts = port_stat[STAT_IDX_TX].stat_pkts;
+//	tx_bytes = port_stat[STAT_IDX_TX].stat_bytes
+//				+ port_stat[STAT_IDX_TX_PROBE].stat_bytes;
+//	tx_pkts = port_stat[STAT_IDX_TX].stat_pkts
+//				+ port_stat[STAT_IDX_TX_PROBE].stat_pkts;
 
 	LOG_INFO("Running %lf seconds.", sec);
 	LOG_INFO("\tRX %lu bytes (%lf kbps), %lu packets (%lf pps)",
@@ -107,26 +110,26 @@ bool stat_init(void)
 {
 	uint64_t cycle;
 	int i = 0;
-	char buf[PREFIX_MAX + 4] = {'\0'};
+//	char buf[PREFIX_MAX + 4] = {'\0'};
 
 	memset(port_stat, 0, sizeof(struct stat_info) * STAT_IDX_MAX);
 
 	if (strlen(output_prefix) <= 0)
 		sprintf(output_prefix, "probe");
 
-	sprintf(buf, "%s.rx", output_prefix);
-	fout_rx = fopen(buf, "w");
-	if (fout_rx == NULL) {
-		LOG_ERROR("Failed to open RX output file");
-		goto close_set_error;
-	}
+	// sprintf(buf, "%s.rx", output_prefix);
+	// fout_rx = fopen(buf, "w");
+	// if (fout_rx == NULL) {
+	// 	LOG_ERROR("Failed to open RX output file");
+	// 	goto close_set_error;
+	// }
 
-	sprintf(buf, "%s.tx", output_prefix);
-	fout_tx = fopen(buf, "w");
-	if (fout_tx == NULL) {
-		LOG_ERROR("Failed to open TX output file");
-		goto close_free_rx;
-	}
+	// sprintf(buf, "%s.tx", output_prefix);
+	// fout_tx = fopen(buf, "w");
+	// if (fout_tx == NULL) {
+	// 	LOG_ERROR("Failed to open TX output file");
+	// 	goto close_free_rx;
+	// }
 
 	/* Initialize timer */
 	cycle_per_sec = rte_get_tsc_hz();
@@ -140,13 +143,13 @@ bool stat_init(void)
 	ctl_set_state(WORKER_STAT, STATE_INITED);
 	return true;
 
-close_free_rx:
-	fclose(fout_rx);
-	fout_rx = NULL;
+// close_free_rx:
+// 	fclose(fout_rx);
+// 	fout_rx = NULL;
 
-close_set_error:
-	ctl_set_state(WORKER_STAT, STATE_ERROR);
-	return false;
+// close_set_error:
+// 	ctl_set_state(WORKER_STAT, STATE_ERROR);
+// 	return false;
 }
 
 bool stat_is_stop(void)
@@ -177,9 +180,11 @@ uint64_t stat_processing(void)
 //		__process_stat(&port_stat[i], &bps[i], &pps[i]);
 	}
 
+	// LOG_INFO("TX speed %lf kbps, %lf pps",
+	// 				bps[STAT_IDX_TX] + bps[STAT_IDX_TX_PROBE],
+	// 				pps[STAT_IDX_TX] + pps[STAT_IDX_TX_PROBE]);
 	LOG_INFO("TX speed %lf kbps, %lf pps",
-					bps[STAT_IDX_TX] + bps[STAT_IDX_TX_PROBE],
-					pps[STAT_IDX_TX] + pps[STAT_IDX_TX_PROBE]);
+					bps[STAT_IDX_TX], pps[STAT_IDX_TX]);
 	LOG_INFO("RX speed %lf kbps, %lf pps",
 					bps[STAT_IDX_RX], pps[STAT_IDX_RX]);
 
@@ -191,11 +196,32 @@ void stat_finish(uint64_t start_cycle)
 {
 	__summary_stat(rte_get_tsc_cycles() - start_cycle);
 
-	if (fout_tx != NULL)
-		fclose(fout_tx);
+	// if (fout_tx != NULL)
+	// 	fclose(fout_tx);
 
-	if (fout_rx != NULL)
-		fclose(fout_rx);
+	// if (fout_rx != NULL)
+	// 	fclose(fout_rx);
 
 	ctl_set_state(WORKER_STAT, STATE_STOPPED);
+}
+
+void stat_thread_run(void)
+{
+	if (!stat_init()) {
+		LOG_ERROR("Failed to initialize stat thread");
+		ctl_set_state(WORKER_STAT, STATE_ERROR);
+		return;
+	}
+
+	uint64_t start_cyc = 0, next_cyc = 0;
+
+	start_cyc = rte_get_tsc_cycles();
+
+	LOG_INFO("Stat thread is running...");
+	while (!stat_is_stop()) {
+		next_cyc = stat_processing();
+		rate_wait_for_time(next_cyc);
+	}
+
+	stat_finish(start_cyc);
 }

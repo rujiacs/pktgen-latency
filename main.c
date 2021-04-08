@@ -223,7 +223,7 @@ static int __lcore_main(__attribute__((__unused__))void *arg)
 	else if (workerid == WORKER_TX)
 		rxtx_thread_run_tx(0, mbuf_pool, tx_type, NULL, trace_file);
 	else {
-		LOG_INFO("Lcore %u is master lcore", lcoreid);
+		stat_thread_run();
 	}
 
 	LOG_INFO("lcore %u finished.", lcoreid);

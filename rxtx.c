@@ -237,10 +237,10 @@ static void __rx_stat(struct rte_mbuf *pkt, uint64_t recv_cyc)
 		LOG_DEBUG("RX packet");
 		stat_update_rx(pkt->data_len);
 	} else {
-		stat_update_rx_probe(probe_idx, pkt->data_len, recv_cyc);
-		LOG_DEBUG("RX packet %u, len %u, recv_cyc %lu",
-						probe_idx, pkt->data_len,
-						(unsigned long)recv_cyc);
+//		stat_update_rx_probe(probe_idx, pkt->data_len, recv_cyc);
+//		LOG_DEBUG("RX packet %u, len %u, recv_cyc %lu",
+//						probe_idx, pkt->data_len,
+//						(unsigned long)recv_cyc);
 	}
 }
 
