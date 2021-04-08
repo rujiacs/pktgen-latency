@@ -310,6 +310,7 @@ int main(int argc, char *argv[])
 
 	if (trace_file)
 		zfree(trace_file);
+		
 	LOG_INFO("Bye...");
 
 	return 0;
