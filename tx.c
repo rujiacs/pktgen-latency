@@ -176,10 +176,6 @@ __pktmbuf_alloc_bulk(struct rte_mempool *pool,
 	}
 	return 0;
 }
-//bool rxtx_set_tx_file(unsigned int type, const char *file)
-//{
-//
-//}
 
 static int __process_tx(int portid __rte_unused, struct tx_ctl *ctl)
 {
