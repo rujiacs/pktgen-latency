@@ -286,7 +286,7 @@ static int __process_tx(int portid __rte_unused, struct tx_ctl *ctl)
 	ctl->len -= ret;
 	ctl->offset += ret;
 
-	sum = (ctl->pkt_info.pkt_len + ETH_CRC_LEN) * ret;
+	sum = (ctl->pkt_info.pkt_len) * ret;
 	stat_update_tx(sum, ret);
 	rate_set_next_cycle(&ctl->tx_rate, start_cyc, sum);
 	return 0;
