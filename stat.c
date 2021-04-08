@@ -10,7 +10,7 @@
 
 static struct stat_info port_stat[STAT_IDX_MAX];
 
-static char output_prefix[FILENAME_MAX] = {'\0'};
+static char output_prefix[FILEPATH_MAX] = {'\0'};
 //static FILE *fout_rx = NULL;
 //static FILE *fout_tx = NULL;
 
@@ -20,7 +20,7 @@ static uint64_t dump_interval = 0;
 
 void stat_set_output(const char *prefix)
 {
-	snprintf(output_prefix, FILENAME_MAX, "%s", prefix);
+	snprintf(output_prefix, FILEPATH_MAX, "%s", prefix);
 }
 
 static void __update_stat(struct stat_info *stat, uint64_t byte)

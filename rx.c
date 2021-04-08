@@ -27,7 +27,7 @@ void rx_set_pcap_output(const char *filename)
 		LOG_ERROR("Wrong output pcap file name");
 		return;
 	}
-	snprintf(rx_ctl.pcapfile, FILENAME_MAX, "%s", filename);
+	snprintf(rx_ctl.pcapfile, FILEPATH_MAX, "%s", filename);
 	rx_ctl.dump_to_pcap = true;
 }
 

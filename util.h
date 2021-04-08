@@ -22,7 +22,7 @@
 #define MAX_MBUF_PER_PORT 2048
 #define DEFAULT_PRIV_SIZE 0
 
-#define FILENAME_MAX 100
+#define FILEPATH_MAX 100
 
 //#define DEBUG_PRINT
 

@@ -6,7 +6,7 @@
 
 struct rx_ctl {
 	bool dump_to_pcap;
-	char pcapfile[FILENAME_MAX];
+	char pcapfile[FILEPATH_MAX];
 	struct rte_mbuf *rx_buf[RX_BURST];
 };
 
