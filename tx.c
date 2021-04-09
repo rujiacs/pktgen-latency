@@ -44,7 +44,7 @@ static struct tx_ctl tx_ctl = {
 		.cycle_per_byte = 0,
 		.next_tx_cycle = 0,
 	},
-	.is_latency = false;
+	.is_latency = false,
 	.len = 0,
 	.offset = 0,
 	.mbuf_tbl = {NULL},

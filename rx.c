@@ -28,10 +28,19 @@ void rx_enable_latency(void)
 	rx_ctl.is_latency = true;
 }
 
+void rx_set_pcap_output(const char *filename)
+{
+	if (strlen(filename) == 0) {
+		snprintf(rx_ctl.pcapfile, FILEPATH_MAX, "rx.pcap");
+	}
+	else {
+		snprintf(rx_ctl.pcapfile, FILEPATH_MAX, "%s", filename);
+	}
+	rx_ctl.dump_to_pcap = true;
+}
+
 static void __rx_stat_latency(struct rte_mbuf *pkt, uint64_t recv_cyc)
 {
-	uint32_t probe_idx = 0;
-	int ret = 0;
 	struct pkt_latency *lat = NULL;
 
 	lat = pkt_seq_get_latency(pkt);
@@ -76,7 +85,7 @@ static int __process_rx(int portid, pcap_dumper_t *pcapout)
 		stat_update_rx(pkt->data_len);
 
 		if (rx_ctl.is_latency)
-			__rx_stat_latency(rx_buf[i], recv_cyc);
+			__rx_stat_latency(pkt, recv_cyc);
 
 		if (pcapout) {
 			 char *pktbuf = rte_pktmbuf_mtod(pkt, char *);

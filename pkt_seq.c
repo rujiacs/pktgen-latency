@@ -129,9 +129,9 @@ void pkt_seq_setup_udpip(struct pkt_seq_info *info,
 	ip->dst_addr = rte_cpu_to_be_32(info->dst_ip);
 
 	if (is_latency)
-		tcpip->ip.packet_id = PKT_SEQ_LATENCY_PKTID;
+		ip->packet_id = PKT_SEQ_LATENCY_PKTID;
 	else
-		tcpip->ip.packet_id = 0;
+		ip->packet_id = 0;
 
 	/* Calculate UDP checksum */
 	udp->dgram_cksum = 0;
@@ -140,13 +140,13 @@ void pkt_seq_setup_udpip(struct pkt_seq_info *info,
 	__setup_ip_hdr(ip);
 }
 
-void __setup_latency(struct rte_mbuf *mbuf)
+static void __setup_latency(struct rte_mbuf *mbuf)
 {
 	struct pkt_latency *lat = NULL;
 
 	if (mbuf->pkt_len < PKT_SEQ_LATENCY_MINSIZE) {
 		LOG_ERROR("Packet (len = %u) dones't have enough space for"
-					" latency fields", mbuf->len);
+					" latency fields", mbuf->pkt_len);
 		return;
 	}
 	lat = rte_pktmbuf_mtod_offset(mbuf, struct pkt_latency*,
@@ -160,8 +160,8 @@ void pkt_seq_fill_mbuf(struct rte_mbuf *mbuf, struct pkt_seq_info *info,
 						bool is_latency)
 {
 	struct rte_ether_hdr *eth_hdr;
-	uint8_t *payload = NULL;
-	unsigned len = 0;
+	// uint8_t *payload = NULL;
+	// unsigned len = 0;
 
 	if (info == NULL) {
 		LOG_ERROR("Wrong data to fill into mbuf");

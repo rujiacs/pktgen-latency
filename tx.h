@@ -52,6 +52,6 @@ void tx_thread_run_tx(int portid,
 
 void tx_set_rate(const char *rate_str);
 
-void tx_set_latency_file(const char *filename);
+void tx_enable_latency(void);
 
 #endif /* _PKTGEN_TX_H_ */
