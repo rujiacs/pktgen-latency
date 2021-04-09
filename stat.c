@@ -8,7 +8,7 @@
 #include <rte_ring.h>
 #include <rte_malloc.h>
 
-static struct stat_ctl stat_ctl {
+static struct stat_ctl stat_ctl = {
 	.port_stat = {
 		{
 			.last_bytes = 0,
@@ -20,7 +20,7 @@ static struct stat_ctl stat_ctl {
 	},
 	.cycle_per_sec = 0,
 	.next_dump_cycle = 0,
-	.dump_internal = 0,
+	.dump_interval = 0,
 	.is_latency = false,
 	.lat_output = NULL,
 	.lat_pages = NULL,
@@ -61,22 +61,25 @@ void stat_update_rx(uint64_t bytes)
 void stat_update_rx_latency(uint64_t id, uint64_t tx, uint64_t rx)
 {
 	struct stat_ctl *ctl = &stat_ctl;
+	void *tmp = NULL;
 
 	if (ctl->cur_page == NULL) {
-		if (rte_ring_dequeue(ctl->free_pages, &(ctl->cur_page)) < 0) {
+		if (rte_ring_dequeue(ctl->free_pages, &tmp) < 0) {
 			LOG_ERROR("No free pages, drop record(%lu, %lu, %lu).",
 						id, tx, rx);
 			return;
 		}
+		ctl->cur_page = (struct stat_lat_page *)tmp;
 	}
 	else if (ctl->cur_page->nb_record == STAT_LAT_PAGE_SIZE) {
 		rte_ring_enqueue(ctl->full_pages, ctl->cur_page);
-		if (rte_ring_dequeue(ctl->free_pages, &(ctl->cur_page)) < 0) {
+		if (rte_ring_dequeue(ctl->free_pages, &tmp) < 0) {
 			LOG_ERROR("No free pages, drop record(%lu, %lu, %lu).",
 						id, tx, rx);
 			ctl->cur_page = NULL;
 			return;
 		}
+		ctl->cur_page = (struct stat_lat_page *)tmp;
 	}
 	ctl->cur_page->record[ctl->cur_page->nb_record].pkt_id = id;
 	ctl->cur_page->record[ctl->cur_page->nb_record].tx_ts = tx;
@@ -105,7 +108,7 @@ static inline void __process_stat(struct stat_info *stat,
 	stat->last_pkts = pkts;
 
 //	sec = STAT_PRINT_SEC;
-	sec = (double)(cur_cycle - stat->last_cycle) / cycle_per_sec;
+	sec = (double)(cur_cycle - stat->last_cycle) / stat_ctl.cycle_per_sec;
 	stat->last_cycle = cur_cycle;
 
 	*bps = (bytes - last_b) * 8 / (sec * 1024);
@@ -117,7 +120,7 @@ static void __summary_stat(uint64_t cycles)
 	double sec = 0;
 	uint64_t rx_bytes, rx_pkts, tx_bytes, tx_pkts;
 
-	sec = (double)cycles / cycle_per_sec;
+	sec = (double)cycles / stat_ctl.cycle_per_sec;
 	rx_bytes = stat_ctl.port_stat[STAT_IDX_RX].stat_bytes;
 	rx_pkts = stat_ctl.port_stat[STAT_IDX_RX].stat_pkts;
 	tx_bytes = stat_ctl.port_stat[STAT_IDX_TX].stat_bytes;
@@ -132,7 +135,7 @@ static void __summary_stat(uint64_t cycles)
 					tx_pkts, (tx_pkts / sec));
 }
 
-bool __init_latency(void)
+static bool __init_latency(void)
 {
 	struct stat_ctl *ctl = &stat_ctl;
 	size_t size = sizeof(struct stat_lat_page) * STAT_LAT_PAGE_NUM;
@@ -274,10 +277,12 @@ void stat_finish(uint64_t start_cycle)
 			if (pages > 0) {
 				LOG_INFO("Write back the %u pages in the queue", pages);
 				struct stat_lat_page *page = NULL;
+				void *tmp = NULL;
 
-				while (rte_ring_dequeue(stat_ctl.full_pages, &page) == 0) {
+				while (rte_ring_dequeue(stat_ctl.full_pages, &tmp) == 0) {
+					page = (struct stat_lat_page *)tmp;
 					fwrite(page->record, sizeof(struct stat_lat),
-							page->nb_record, stat_lat.lat_output);
+							page->nb_record, stat_ctl.lat_output);
 				}
 			}
 
@@ -323,11 +328,13 @@ void stat_thread_run(void)
 		next_cyc = stat_processing();
 
 		if (stat_ctl.is_latency) {
+			void *tmp = NULL;
 			struct stat_lat_page *page = NULL;
 
-			while (rte_ring_dequeue(stat_ctl.full_pages, &page) == 0) {
+			while (rte_ring_dequeue(stat_ctl.full_pages, &tmp) == 0) {
+				page = (struct stat_lat_page *)tmp;
 				fwrite(page->record, sizeof(struct stat_lat),
-							page->nb_record, lat_output);
+							page->nb_record, stat_ctl.lat_output);
 				page->nb_record = 0;
 				rte_ring_enqueue(stat_ctl.free_pages, page);
 			}

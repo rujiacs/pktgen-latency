@@ -37,9 +37,9 @@ struct rte_ring;
 struct stat_ctl {
 	struct stat_info port_stat[STAT_IDX_MAX];
 
-	uint64_t cycle_per_sec = 0;
-	uint64_t next_dump_cycle = 0;
-	uint64_t dump_interval = 0;
+	uint64_t cycle_per_sec;
+	uint64_t next_dump_cycle ;
+	uint64_t dump_interval;
 
 	bool is_latency;
 	FILE *lat_output;
