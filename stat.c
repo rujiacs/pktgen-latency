@@ -8,19 +8,43 @@
 #include <rte_ring.h>
 #include <rte_malloc.h>
 
-static struct stat_info port_stat[STAT_IDX_MAX];
+static struct stat_ctl stat_ctl {
+	.port_stat = {
+		{
+			.last_bytes = 0,
+			.last_pkts = 0,
+			.stat_bytes = 0,
+			.stat_pkts = 0,
+			.last_cycle = 0,
+		}
+	},
+	.cycle_per_sec = 0,
+	.next_dump_cycle = 0,
+	.dump_internal = 0,
+	.is_latency = false,
+	.lat_output = NULL,
+	.lat_pages = NULL,
+	.free_pages = NULL,
+	.full_pages = NULL,
+	.cur_page = NULL,
+};
 
-static char output_prefix[FILEPATH_MAX] = {'\0'};
-//static FILE *fout_rx = NULL;
-//static FILE *fout_tx = NULL;
-
-static uint64_t cycle_per_sec = 0;
-static uint64_t next_dump_cycle = 0;
-static uint64_t dump_interval = 0;
-
-void stat_set_output(const char *prefix)
+bool stat_set_output(const char *prefix)
 {
-	snprintf(output_prefix, FILEPATH_MAX, "%s", prefix);
+	char outputfile[FILEPATH_MAX] = {'\0'};
+
+	if (strlen(prefix) == 0)
+		snprintf(outputfile, FILEPATH_MAX, "tmp.lat");
+	else
+		snprintf(outputfile, FILEPATH_MAX, "%s", prefix);
+
+	stat_ctl.lat_output = fopen(outputfile, "w");
+	if (!stat_ctl.lat_output) {
+		LOG_ERROR("Failed to latency record file %s", outputfile);
+		return false;
+	}
+	stat_ctl.is_latency = true;
+	return true;
 }
 
 static void __update_stat(struct stat_info *stat, uint64_t byte)
@@ -31,34 +55,42 @@ static void __update_stat(struct stat_info *stat, uint64_t byte)
 
 void stat_update_rx(uint64_t bytes)
 {
-	__update_stat(&port_stat[STAT_IDX_RX], bytes);
+	__update_stat(&stat_ctl.port_stat[STAT_IDX_RX], bytes);
 }
 
-//void stat_update_rx_probe(uint32_t idx, uint64_t bytes, uint64_t cycle)
-//{
-//	if (fout_rx != NULL)
-//		fprintf(fout_rx, "%u,%u,%lu\n", idx, RECORD_RX, cycle);
-//
-//	LOG_DEBUG("RX probe packet %u at %lu", idx, (unsigned long)cycle);
-//	__update_stat(&port_stat[STAT_IDX_RX], bytes);
-//}
+void stat_update_rx_latency(uint64_t id, uint64_t tx, uint64_t rx)
+{
+	struct stat_ctl *ctl = &stat_ctl;
+
+	if (ctl->cur_page == NULL) {
+		if (rte_ring_dequeue(ctl->free_pages, &(ctl->cur_page)) < 0) {
+			LOG_ERROR("No free pages, drop record(%lu, %lu, %lu).",
+						id, tx, rx);
+			return;
+		}
+	}
+	else if (ctl->cur_page->nb_record == STAT_LAT_PAGE_SIZE) {
+		rte_ring_enqueue(ctl->full_pages, ctl->cur_page);
+		if (rte_ring_dequeue(ctl->free_pages, &(ctl->cur_page)) < 0) {
+			LOG_ERROR("No free pages, drop record(%lu, %lu, %lu).",
+						id, tx, rx);
+			ctl->cur_page = NULL;
+			return;
+		}
+	}
+	ctl->cur_page->record[ctl->cur_page->nb_record].pkt_id = id;
+	ctl->cur_page->record[ctl->cur_page->nb_record].tx_ts = tx;
+	ctl->cur_page->record[ctl->cur_page->nb_record].rx_ts = rx;
+	ctl->cur_page->nb_record ++;
+}
 
 void stat_update_tx(uint64_t bytes, unsigned int pkts)
 {
-	port_stat[STAT_IDX_TX].stat_bytes += bytes;
-	port_stat[STAT_IDX_TX].stat_pkts += pkts;
+	stat_ctl.port_stat[STAT_IDX_TX].stat_bytes += bytes;
+	stat_ctl.port_stat[STAT_IDX_TX].stat_pkts += pkts;
 }
 
-//void stat_update_tx_probe(uint32_t idx, uint64_t bytes, uint64_t cycle)
-//{
-//	if (fout_tx != NULL)
-//		fprintf(fout_tx, "%u,%u,%lu\n", idx, RECORD_TX, cycle);
-//
-//	__update_stat(&port_stat[STAT_IDX_TX_PROBE], bytes);
-//}
-
 static inline void __process_stat(struct stat_info *stat,
-//				double *bps, double *pps)
 				uint64_t cur_cycle, double *bps, double *pps)
 {
 	uint64_t bytes = 0, pkts = 0;
@@ -86,14 +118,10 @@ static void __summary_stat(uint64_t cycles)
 	uint64_t rx_bytes, rx_pkts, tx_bytes, tx_pkts;
 
 	sec = (double)cycles / cycle_per_sec;
-	rx_bytes = port_stat[STAT_IDX_RX].stat_bytes;
-	rx_pkts = port_stat[STAT_IDX_RX].stat_pkts;
-	tx_bytes = port_stat[STAT_IDX_TX].stat_bytes;
-	tx_pkts = port_stat[STAT_IDX_TX].stat_pkts;
-//	tx_bytes = port_stat[STAT_IDX_TX].stat_bytes
-//				+ port_stat[STAT_IDX_TX_PROBE].stat_bytes;
-//	tx_pkts = port_stat[STAT_IDX_TX].stat_pkts
-//				+ port_stat[STAT_IDX_TX_PROBE].stat_pkts;
+	rx_bytes = stat_ctl.port_stat[STAT_IDX_RX].stat_bytes;
+	rx_pkts = stat_ctl.port_stat[STAT_IDX_RX].stat_pkts;
+	tx_bytes = stat_ctl.port_stat[STAT_IDX_TX].stat_bytes;
+	tx_pkts = stat_ctl.port_stat[STAT_IDX_TX].stat_pkts;
 
 	LOG_INFO("Running %lf seconds.", sec);
 	LOG_INFO("\tRX %lu bytes (%lf kbps), %lu packets (%lf pps)",
@@ -104,50 +132,94 @@ static void __summary_stat(uint64_t cycles)
 					tx_pkts, (tx_pkts / sec));
 }
 
+bool __init_latency(void)
+{
+	struct stat_ctl *ctl = &stat_ctl;
+	size_t size = sizeof(struct stat_lat_page) * STAT_LAT_PAGE_NUM;
+	struct rte_ring *ring = NULL;
+	unsigned i = 0;
+
+	ctl->lat_pages = (struct stat_lat_page *)rte_zmalloc(NULL, size, 0);
+	if (!ctl->lat_pages) {
+		LOG_ERROR("Failed to allocate latency record cache "
+					"(%lu bytes)", size);
+		return false;
+	}
+
+	ring = rte_ring_create("LAT_PAGE_FULL", STAT_LAT_PAGE_NUM,
+							rte_socket_id(),
+							RING_F_SP_ENQ | RING_F_SC_DEQ);
+	if (!ring) {
+		LOG_ERROR("Faile to create full_pages ring buffer");
+		goto free_lat_pages;
+	}
+	ctl->full_pages = ring;
+
+	ring = rte_ring_create("LAT_PAGE_FREE", STAT_LAT_PAGE_NUM,
+							rte_socket_id(),
+							RING_F_SP_ENQ | RING_F_SC_DEQ);
+	if (!ring) {
+		LOG_ERROR("Faile to create free_pages ring buffer");
+		goto free_full_pages;
+	}
+	ctl->free_pages = ring;
+
+	/* Insert all initial pages expect the first one into free_pages */
+	for (i = 1; i < STAT_LAT_PAGE_NUM; i++) {
+		if (rte_ring_enqueue(ctl->free_pages, &(ctl->lat_pages[i])) < 0) {
+			LOG_ERROR("Failed to enqueue free pages");
+			goto free_free_pages;
+		}
+	}
+	ctl->cur_page = &ctl->lat_pages[0];
+
+	return true;
+
+free_free_pages:
+	rte_ring_free(ctl->free_pages);
+	ctl->free_pages = NULL;
+
+free_full_pages:
+	rte_ring_free(ctl->full_pages);
+	ctl->full_pages = NULL;
+
+free_lat_pages:
+	rte_free(ctl->lat_pages);
+	ctl->lat_pages = NULL;
+
+	return false;
+}
+
 bool stat_init(void)
 {
 	uint64_t cycle;
 	int i = 0;
-//	char buf[PREFIX_MAX + 4] = {'\0'};
+	bool ret = false;
 
-	memset(port_stat, 0, sizeof(struct stat_info) * STAT_IDX_MAX);
-
-	if (strlen(output_prefix) <= 0)
-		sprintf(output_prefix, "probe");
-
-	// sprintf(buf, "%s.rx", output_prefix);
-	// fout_rx = fopen(buf, "w");
-	// if (fout_rx == NULL) {
-	// 	LOG_ERROR("Failed to open RX output file");
-	// 	goto close_set_error;
-	// }
-
-	// sprintf(buf, "%s.tx", output_prefix);
-	// fout_tx = fopen(buf, "w");
-	// if (fout_tx == NULL) {
-	// 	LOG_ERROR("Failed to open TX output file");
-	// 	goto close_free_rx;
-	// }
+	if (stat_ctl.is_latency) {
+		ret = __init_latency();
+		if (!ret) {
+			LOG_ERROR("Failed to init latency stat");
+			if (stat_ctl.lat_output) {
+				fclose(stat_ctl.lat_output);
+				stat_ctl.lat_output = NULL;
+			}
+			ctl_set_state(WORKER_STAT, STATE_ERROR);
+			return false;
+		}
+	}
 
 	/* Initialize timer */
-	cycle_per_sec = rte_get_tsc_hz();
-	dump_interval = STAT_PRINT_SEC * cycle_per_sec;
+	stat_ctl.cycle_per_sec = rte_get_tsc_hz();
+	stat_ctl.dump_interval = STAT_PRINT_SEC * stat_ctl.cycle_per_sec;
 	cycle = rte_get_tsc_cycles();
 	for (i = 0; i < STAT_IDX_MAX; i++) {
-		port_stat[i].last_cycle = cycle;
+		stat_ctl.port_stat[i].last_cycle = cycle;
 	}
-	next_dump_cycle = cycle + dump_interval;
+	stat_ctl.next_dump_cycle = cycle + stat_ctl.dump_interval;
 
 	ctl_set_state(WORKER_STAT, STATE_INITED);
 	return true;
-
-// close_free_rx:
-// 	fclose(fout_rx);
-// 	fout_rx = NULL;
-
-// close_set_error:
-// 	ctl_set_state(WORKER_STAT, STATE_ERROR);
-// 	return false;
 }
 
 bool stat_is_stop(void)
@@ -169,36 +241,67 @@ uint64_t stat_processing(void)
 	double bps[STAT_IDX_MAX], pps[STAT_IDX_MAX];
 	int i = 0;
 
-	if (cur_cycle < next_dump_cycle) {
-		return next_dump_cycle;
+	if (cur_cycle < stat_ctl.next_dump_cycle) {
+		return stat_ctl.next_dump_cycle;
 	}
 
 	for (i = 0; i < STAT_IDX_MAX; i++) {
-		__process_stat(&port_stat[i], cur_cycle, &bps[i], &pps[i]);
-//		__process_stat(&port_stat[i], &bps[i], &pps[i]);
+		__process_stat(&stat_ctl.port_stat[i], cur_cycle,
+							&bps[i], &pps[i]);
 	}
 
-	// LOG_INFO("TX speed %lf kbps, %lf pps",
-	// 				bps[STAT_IDX_TX] + bps[STAT_IDX_TX_PROBE],
-	// 				pps[STAT_IDX_TX] + pps[STAT_IDX_TX_PROBE]);
 	LOG_INFO("TX speed %lf kbps, %lf pps",
 					bps[STAT_IDX_TX], pps[STAT_IDX_TX]);
 	LOG_INFO("RX speed %lf kbps, %lf pps",
 					bps[STAT_IDX_RX], pps[STAT_IDX_RX]);
 
-	next_dump_cycle = cur_cycle + dump_interval;
-	return next_dump_cycle;
+	stat_ctl.next_dump_cycle = cur_cycle + stat_ctl.dump_interval;
+	return stat_ctl.next_dump_cycle;
 }
 
 void stat_finish(uint64_t start_cycle)
 {
 	__summary_stat(rte_get_tsc_cycles() - start_cycle);
 
-	// if (fout_tx != NULL)
-	// 	fclose(fout_tx);
+	if (stat_ctl.is_latency) {
+		if (stat_ctl.free_pages) {
+			rte_ring_free(stat_ctl.free_pages);
+			stat_ctl.free_pages = NULL;
+		}
+		if (stat_ctl.full_pages) {			
+			unsigned pages = rte_ring_count(stat_ctl.full_pages);
 
-	// if (fout_rx != NULL)
-	// 	fclose(fout_rx);
+			if (pages > 0) {
+				LOG_INFO("Write back the %u pages in the queue", pages);
+				struct stat_lat_page *page = NULL;
+
+				while (rte_ring_dequeue(stat_ctl.full_pages, &page) == 0) {
+					fwrite(page->record, sizeof(struct stat_lat),
+							page->nb_record, stat_lat.lat_output);
+				}
+			}
+
+			rte_ring_free(stat_ctl.full_pages);
+			stat_ctl.full_pages = NULL;
+		}
+		if (stat_ctl.cur_page) {
+			LOG_INFO("Write back the last %u records",
+						stat_ctl.cur_page->nb_record);
+			fwrite(stat_ctl.cur_page->record, sizeof(struct stat_lat),
+					stat_ctl.cur_page->nb_record, stat_ctl.lat_output);
+			stat_ctl.cur_page = NULL;
+		}
+
+		if (stat_ctl.lat_pages) {
+			rte_free(stat_ctl.lat_pages);
+			stat_ctl.lat_pages = NULL;
+		}
+
+		if (stat_ctl.lat_output) {
+			fclose(stat_ctl.lat_output);
+			stat_ctl.lat_output = NULL;
+		}
+	}
 
 	ctl_set_state(WORKER_STAT, STATE_STOPPED);
 }
@@ -218,7 +321,20 @@ void stat_thread_run(void)
 	LOG_INFO("Stat thread is running...");
 	while (!stat_is_stop()) {
 		next_cyc = stat_processing();
-		rate_wait_for_time(next_cyc);
+
+		if (stat_ctl.is_latency) {
+			struct stat_lat_page *page = NULL;
+
+			while (rte_ring_dequeue(stat_ctl.full_pages, &page) == 0) {
+				fwrite(page->record, sizeof(struct stat_lat),
+							page->nb_record, lat_output);
+				page->nb_record = 0;
+				rte_ring_enqueue(stat_ctl.free_pages, page);
+			}
+		}
+		else {
+			rate_wait_for_time(next_cyc);
+		}
 	}
 
 	stat_finish(start_cyc);

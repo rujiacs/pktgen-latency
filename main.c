@@ -63,6 +63,7 @@ static int __parse_options(int argc, char *argv[])
 				if((access(trace_file, F_OK)) == -1) {
 					LOG_ERROR("Trace file %s doesn't exist", trace_file);
 					zfree(trace_file);
+					return -1;
 				}
 				LOG_INFO("Use 5-tuple trace file %s", trace_file);
 				is_trace = true;
@@ -71,7 +72,10 @@ static int __parse_options(int argc, char *argv[])
 				tx_set_rate(optarg);
 				break;
 			case 'l':
-				stat_set_output(optarg);
+				if (!stat_set_output(optarg)) {
+					LOG_ERROR("Faile to configure latency measurement");
+					return -1;
+				}
 				rx_enable_latency();
 				tx_enable_latency();
 				break;

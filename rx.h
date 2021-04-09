@@ -2,6 +2,7 @@
 #define _PKTGEN_RX_H_
 
 #include <stdbool.h>
+#include "stat.h"
 #include "util.h"
 
 struct rx_ctl {

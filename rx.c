@@ -47,7 +47,7 @@ static void __rx_stat_latency(struct rte_mbuf *pkt, uint64_t recv_cyc)
 	if (!lat)
 		return;
 
-	LOG_INFO("Pkt %lu: %lu", lat->id, (recv_cyc - lat->timestamp));
+	stat_update_rx_latency(lat->id, lat->timestamp, recv_cyc);
 }
 
 static void __pcap_dump_pkt(pcap_dumper_t *out,
