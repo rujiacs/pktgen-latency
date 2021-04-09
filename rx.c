@@ -14,38 +14,32 @@
 #include "control.h"
 #include "rx.h"
 #include "stat.h"
+#include "pkt_seq.h"
 
 static struct rx_ctl rx_ctl = {
 	.dump_to_pcap = false,
 	.pcapfile = {'\0'},
+	.is_latency = false,
 	.rx_buf = {NULL}
 };
 
-void rx_set_pcap_output(const char *filename)
+void rx_enable_latency(void)
 {
-	if (strlen(filename) == 0) {
-		LOG_ERROR("Wrong output pcap file name");
-		return;
-	}
-	snprintf(rx_ctl.pcapfile, FILEPATH_MAX, "%s", filename);
-	rx_ctl.dump_to_pcap = true;
+	rx_ctl.is_latency = true;
 }
 
-//static void __rx_stat(struct rte_mbuf *pkt, uint64_t recv_cyc)
-//{
-//	uint32_t probe_idx = 0;
-//	int ret = 0;
-//
-//	if (pkt_seq_get_idx(pkt, &probe_idx) < 0) {
-//		LOG_DEBUG("RX packet");
-//		stat_update_rx(pkt->data_len);
-//	} else {
-//		stat_update_rx_probe(probe_idx, pkt->data_len, recv_cyc);
-//		LOG_DEBUG("RX packet %u, len %u, recv_cyc %lu",
-//						probe_idx, pkt->data_len,
-//						(unsigned long)recv_cyc);
-//	}
-//}
+static void __rx_stat_latency(struct rte_mbuf *pkt, uint64_t recv_cyc)
+{
+	uint32_t probe_idx = 0;
+	int ret = 0;
+	struct pkt_latency *lat = NULL;
+
+	lat = pkt_seq_get_latency(pkt);
+	if (!lat)
+		return;
+
+	LOG_INFO("Pkt %lu: %lu", lat->id, (recv_cyc - lat->timestamp));
+}
 
 static void __pcap_dump_pkt(pcap_dumper_t *out,
 							const u_char *pkt, int len,
@@ -64,7 +58,7 @@ static int __process_rx(int portid, pcap_dumper_t *pcapout)
 {
 	uint16_t nb_rx, i = 0;
 	struct timeval tv;
-//	uint64_t recv_cyc = 0;
+	uint64_t recv_cyc = 0;
 
 //	recv_cyc = rte_get_tsc_cycles();
 	nb_rx = rte_eth_rx_burst(portid, 0, rx_ctl.rx_buf, RX_BURST);
@@ -73,11 +67,16 @@ static int __process_rx(int portid, pcap_dumper_t *pcapout)
 
 	if (pcapout)
 		gettimeofday(&tv, NULL);
+	if (rx_ctl.is_latency)
+		recv_cyc = rte_get_tsc_cycles();
 
 	for (i = 0; i < nb_rx; i++) {
 		struct rte_mbuf *pkt = rx_ctl.rx_buf[i];
-//		__rx_stat(rx_buf[i], recv_cyc);
+
 		stat_update_rx(pkt->data_len);
+
+		if (rx_ctl.is_latency)
+			__rx_stat_latency(rx_buf[i], recv_cyc);
 
 		if (pcapout) {
 			 char *pktbuf = rte_pktmbuf_mtod(pkt, char *);

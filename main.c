@@ -17,7 +17,6 @@
 #include "tx.h"
 #include "control.h"
 #include "pkt_seq.h"
-#include "measure.h"
 
 #define RX_RING_SIZE 1024
 #define TX_RING_SIZE 1024
@@ -27,8 +26,6 @@
 #define BURST_SIZE 32
 
 static unsigned tx_type = TX_TYPE_SINGLE;
-
-//static int portid = -1;
 
 static struct rte_mempool *mbuf_pool = NULL;
 
@@ -46,7 +43,7 @@ static void __usage(const char *progname)
 	LOG_INFO("\t\t-r <TX rate (default 0)>");
 	LOG_INFO("\t\t-t <5-tuple trace file>");
 	LOG_INFO("\t\t-o <output pcap file>");
-	LOG_INFO("\t\t-l <latency file>");
+	LOG_INFO("\t\t-l <latency file prefix>");
 	LOG_INFO("\t\t-R Random pakcets");
 }
 
@@ -75,6 +72,8 @@ static int __parse_options(int argc, char *argv[])
 				break;
 			case 'l':
 				stat_set_output(optarg);
+				rx_enable_latency();
+				tx_enable_latency();
 				break;
 			case 'o':
 				rx_set_pcap_output(optarg);
@@ -151,7 +150,6 @@ __port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 		return retval;
 	}
 
-	LOG_INFO("TX_OFFLOAD_CAPA %lx", dev_info.tx_offload_capa);
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		port_conf.txmode.offloads |=
 			DEV_TX_OFFLOAD_MBUF_FAST_FREE;

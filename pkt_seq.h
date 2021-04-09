@@ -28,8 +28,10 @@ struct pkt_seq_info {
 	uint16_t pkt_len;
 };
 
-#define PKT_PROBE_MAGIC 0x12345678
-#define PKT_PROBE_INITVAL 7
+struct pkt_latency {
+	uint64_t id;
+	uint64_t timestamp;
+} __attribute__((__packed__));
 
 struct tcpip_hdr {
 	struct rte_ipv4_hdr ip;
@@ -39,15 +41,6 @@ struct tcpip_hdr {
 struct udpip_hdr {
 	struct rte_ipv4_hdr ip;
 	struct rte_udp_hdr udp;
-};
-
-struct pkt_probe {
-	struct rte_ether_hdr eth_hdr;
-	struct udpip_hdr udpip_hdr;
-	uint32_t probe_idx;
-	uint32_t probe_magic;
-	uint64_t send_cycle;
-//	uint8_t pad[10];
 };
 
 #define IPv4(a, b, c, d)   ((uint32_t)(((a) & 0xff) << 24) |   \
@@ -70,27 +63,23 @@ struct pkt_probe {
 #define PKT_SEQ_TCP_FLAGS RTE_TCP_ACK_FLAG
 #define PKT_SEQ_TCP_WINDOW 8192
 
-#define PKT_SEQ_PROBE_PKT_LEN 60
-#define PKT_SEQ_PROBE_PROTO IPPROTO_UDP
-#define PKT_SEQ_PROBE_PORT_SRC 3024
-#define PKT_SEQ_PROBE_PORT_DST 3024
+#define PKT_SEQ_LATENCY_PKTID 30712
+#define PKT_SEQ_LATENCY_MINSIZE 72
 
 void pkt_seq_set_default_mac(void);
 
 void pkt_seq_init(struct pkt_seq_info *info);
 
 void pkt_seq_setup_udpip(struct pkt_seq_info *info,
-				struct udpip_hdr *udpip);
+				struct udpip_hdr *udpip, bool is_latency);
 
 void pkt_seq_setup_tcpip(struct pkt_seq_info *info,
-				struct tcpip_hdr *tcpip);
-
-struct pkt_probe *pkt_seq_create_probe(void);
-
-int pkt_seq_get_idx(struct rte_mbuf *pkt, uint32_t *idx);
+				struct tcpip_hdr *tcpip, bool is_latency);
 
 void pkt_seq_fill_mbuf(struct rte_mbuf *mbuf,
-				struct pkt_seq_info *info);
+				struct pkt_seq_info *info, bool latency);
+
+struct pkt_latency *pkt_seq_get_latency(struct rte_mbuf *mbuf);
 
 #define ETH_CRC_LEN 4
 

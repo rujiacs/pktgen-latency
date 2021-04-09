@@ -44,6 +44,7 @@ static struct tx_ctl tx_ctl = {
 		.cycle_per_byte = 0,
 		.next_tx_cycle = 0,
 	},
+	.is_latency = false;
 	.len = 0,
 	.offset = 0,
 	.mbuf_tbl = {NULL},
@@ -52,6 +53,11 @@ static struct tx_ctl tx_ctl = {
 void tx_set_rate(const char *rate_str)
 {
 	rate_set_rate(rate_str, &tx_ctl.tx_rate);
+}
+
+void tx_enable_latency(void)
+{
+	tx_ctl.is_latency = true;
 }
 
 static void __set_tx_pkt_info(struct pkt_seq_info *info)
@@ -94,7 +100,7 @@ static inline void __pkt_setup(struct rte_mbuf *m, unsigned tx_type)
             break;
     }
 
-	pkt_seq_fill_mbuf(m, info);
+	pkt_seq_fill_mbuf(m, info, tx_ctl.is_latency);
 }
 
 static bool __load_tuple_traces(const char *filename)

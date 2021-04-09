@@ -4,6 +4,7 @@
 #include <rte_hash_crc.h>
 #include <rte_malloc.h>
 #include <rte_mbuf.h>
+#include <rte_cycles.h>
 
 #define IP_VERSION 0x40
 #define IP_HDRLEN 0x05
@@ -16,6 +17,8 @@ static struct rte_ether_addr mac_src = {
 static struct rte_ether_addr mac_dst = {
 	.addr_bytes = {21},
 };
+
+static uint64_t pkt_idx = 0;
 
 static void __parse_mac_addr(const char *str,
 				struct rte_ether_addr *addr)
@@ -60,14 +63,13 @@ static void __setup_ip_hdr(struct rte_ipv4_hdr *ip)
 	ip->type_of_service = 0;
 	ip->fragment_offset = 0;
 	ip->time_to_live = IP_TTL_DEF;
-	ip->packet_id = 0;
 
 	/* Compute IPv4 header checksum */
 	ip->hdr_checksum = rte_ipv4_cksum(ip);
 }
 
 void pkt_seq_setup_tcpip(struct pkt_seq_info *info,
-				struct tcpip_hdr *tcpip)
+				struct tcpip_hdr *tcpip, bool is_latency)
 {
 	memset(tcpip, 0, sizeof(struct tcpip_hdr));
 
@@ -88,6 +90,11 @@ void pkt_seq_setup_tcpip(struct pkt_seq_info *info,
 								- sizeof(struct rte_ether_hdr));
 	tcpip->ip.next_proto_id = IPPROTO_TCP;
 
+	if (is_latency)
+		tcpip->ip.packet_id = PKT_SEQ_LATENCY_PKTID;
+	else
+		tcpip->ip.packet_id = 0;
+
 	/* Calculate tcp checksum */
 //	tlen = info->pkt_len - sizeof(struct rte_ether_hdr);
 	tcpip->tcp.cksum = rte_ipv4_udptcp_cksum(
@@ -100,7 +107,7 @@ void pkt_seq_setup_tcpip(struct pkt_seq_info *info,
 }
 
 void pkt_seq_setup_udpip(struct pkt_seq_info *info,
-				struct udpip_hdr *udpip)
+				struct udpip_hdr *udpip, bool is_latency)
 {
 	struct rte_udp_hdr *udp = &udpip->udp;
 	struct rte_ipv4_hdr *ip = &udpip->ip;
@@ -115,12 +122,16 @@ void pkt_seq_setup_udpip(struct pkt_seq_info *info,
 										- sizeof(struct rte_ipv4_hdr));
 
 	/* Setup part of IPv4 header */
-	ip->packet_id = 0;
 	ip->next_proto_id = IPPROTO_UDP;
 	ip->total_length = rte_cpu_to_be_16(info->pkt_len
 										- sizeof(struct rte_ether_hdr));
 	ip->src_addr = rte_cpu_to_be_32(info->src_ip);
 	ip->dst_addr = rte_cpu_to_be_32(info->dst_ip);
+
+	if (is_latency)
+		tcpip->ip.packet_id = PKT_SEQ_LATENCY_PKTID;
+	else
+		tcpip->ip.packet_id = 0;
 
 	/* Calculate UDP checksum */
 	udp->dgram_cksum = 0;
@@ -129,46 +140,24 @@ void pkt_seq_setup_udpip(struct pkt_seq_info *info,
 	__setup_ip_hdr(ip);
 }
 
-struct pkt_probe *pkt_seq_create_probe(void)
+void __setup_latency(struct rte_mbuf *mbuf)
 {
-	struct pkt_probe *pkt = NULL;
-	struct pkt_seq_info info = {
-		.src_ip = PKT_SEQ_IP_SRC,
-		.dst_ip = PKT_SEQ_IP_DST,
-		.proto = IPPROTO_UDP,
-		.src_port = PKT_SEQ_PROBE_PORT_SRC,
-		.dst_port = PKT_SEQ_PROBE_PORT_DST,
-		.pkt_len = PKT_SEQ_PROBE_PKT_LEN,
-	};
+	struct pkt_latency *lat = NULL;
 
-	pkt = rte_zmalloc("pktgen: struct pkt_probe",
-						sizeof(struct pkt_probe), 0);
-	if (pkt == NULL) {
-		LOG_ERROR("Failed to allocate memory for pkt_probe");
-		return NULL;
+	if (mbuf->pkt_len < PKT_SEQ_LATENCY_MINSIZE) {
+		LOG_ERROR("Packet (len = %u) dones't have enough space for"
+					" latency fields", mbuf->len);
+		return;
 	}
-
-	LOG_DEBUG("eth_hdr %lu, ip_hdr %lu, udp_hdr %lu, idx %lu, magic %lu, pkt_len %lu",
-					sizeof(pkt->eth_hdr), sizeof(pkt->ip_hdr),
-					sizeof(pkt->udp_hdr), sizeof(pkt->probe_idx),
-					sizeof(pkt->probe_idx), sizeof(struct pkt_probe));
-
-	/* Setup UDP and IPv4 headers */
-	pkt_seq_setup_udpip(&info, &pkt->udpip_hdr);
-
-	/* Setup Ethernet header */
-	rte_ether_addr_copy(&mac_src, &pkt->eth_hdr.s_addr);
-	rte_ether_addr_copy(&mac_dst, &pkt->eth_hdr.d_addr);
-	pkt->eth_hdr.ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
-
-	/* Setup probe info */
-	pkt->probe_idx = 0;
-	pkt->probe_magic = PKT_PROBE_MAGIC;
-	pkt->send_cycle = 0;
-	return pkt;
+	lat = rte_pktmbuf_mtod_offset(mbuf, struct pkt_latency*,
+						mbuf->pkt_len - sizeof(struct pkt_latency));
+	lat->id = pkt_idx;
+	lat->timestamp = rte_get_tsc_cycles();
+	pkt_idx ++;
 }
 
-void pkt_seq_fill_mbuf(struct rte_mbuf *mbuf, struct pkt_seq_info *info)
+void pkt_seq_fill_mbuf(struct rte_mbuf *mbuf, struct pkt_seq_info *info,
+						bool is_latency)
 {
 	struct rte_ether_hdr *eth_hdr;
 	uint8_t *payload = NULL;
@@ -182,20 +171,22 @@ void pkt_seq_fill_mbuf(struct rte_mbuf *mbuf, struct pkt_seq_info *info)
 	mbuf->pkt_len = info->pkt_len;
 	mbuf->data_len = info->pkt_len;
 
-	/* Setup payload */
-	if (info->proto == IPPROTO_TCP) {
-		len = info->pkt_len - sizeof(struct rte_ether_hdr)
-							- sizeof(struct tcpip_hdr);
-		payload = rte_pktmbuf_mtod_offset(mbuf, uint8_t *,
-						sizeof(struct rte_ether_hdr) + sizeof(struct tcpip_hdr));
-	} else {
-		len = info->pkt_len - sizeof(struct rte_ether_hdr)
-							- sizeof(struct udpip_hdr);
-		payload = rte_pktmbuf_mtod_offset(mbuf, uint8_t *,
-						sizeof(struct rte_ether_hdr) + sizeof(struct udpip_hdr));
-	}
-	memset(payload, 0, len);
-	LOG_DEBUG("payload len %u", len);
+	// /* Setup payload */
+	// if (info->proto == IPPROTO_TCP) {
+	// 	len = info->pkt_len - sizeof(struct rte_ether_hdr)
+	// 						- sizeof(struct tcpip_hdr);
+	// 	payload = rte_pktmbuf_mtod_offset(mbuf, uint8_t *,
+	// 					sizeof(struct rte_ether_hdr) + sizeof(struct tcpip_hdr));
+	// } else {
+	// 	len = info->pkt_len - sizeof(struct rte_ether_hdr)
+	// 						- sizeof(struct udpip_hdr);
+	// 	payload = rte_pktmbuf_mtod_offset(mbuf, uint8_t *,
+	// 					sizeof(struct rte_ether_hdr) + sizeof(struct udpip_hdr));
+	// }
+	// memset(payload, 0, len);
+	// LOG_DEBUG("payload len %u", len);
+	if (is_latency)
+		__setup_latency(mbuf);
 
 	/* Setup TCP/UDP+IP */
 	if (info->proto == IPPROTO_TCP) {
@@ -203,14 +194,14 @@ void pkt_seq_fill_mbuf(struct rte_mbuf *mbuf, struct pkt_seq_info *info)
 
 		tcpip = rte_pktmbuf_mtod_offset(mbuf, struct tcpip_hdr*,
 						sizeof(struct rte_ether_hdr));
-		pkt_seq_setup_tcpip(info, tcpip);
+		pkt_seq_setup_tcpip(info, tcpip, is_latency);
 
 	} else {
 		struct udpip_hdr *udpip;
 
 		udpip = rte_pktmbuf_mtod_offset(mbuf, struct udpip_hdr*,
 						sizeof(struct rte_ether_hdr));
-		pkt_seq_setup_udpip(info, udpip);
+		pkt_seq_setup_udpip(info, udpip, is_latency);
 	}
 
 	/* Setup Ethernet header */
@@ -225,34 +216,26 @@ void pkt_seq_fill_mbuf(struct rte_mbuf *mbuf, struct pkt_seq_info *info)
 	// 				info->pkt_len, 0);
 }
 
-int pkt_seq_get_idx(struct rte_mbuf *pkt, uint32_t *idx)
+struct pkt_latency *pkt_seq_get_latency(struct rte_mbuf *mbuf)
 {
 	struct rte_ether_hdr *eth_hdr = NULL;
 	struct rte_ipv4_hdr *ip_hdr = NULL;
-	struct pkt_probe *probe = NULL;
 
-	eth_hdr = rte_pktmbuf_mtod(pkt, struct rte_ether_hdr *);
-
-//	LOG_INFO("PKT len %u", pkt->data_len);
+	eth_hdr = rte_pktmbuf_mtod(mbuf, struct rte_ether_hdr *);
 
 	if (eth_hdr->ether_type != rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4)) {
-//		LOG_INFO("Not IPv4");
-		return -1;
+		LOG_INFO("Not IPv4");
+		return NULL;
 	}
 
-	ip_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ipv4_hdr *,
+	ip_hdr = rte_pktmbuf_mtod_offset(mbuf, struct rte_ipv4_hdr *,
 					sizeof(struct rte_ether_hdr));
-	if (ip_hdr->next_proto_id != IPPROTO_UDP) {
-//		LOG_INFO("Not UDP");
-		return -1;
+	if (ip_hdr->packet_id != PKT_SEQ_LATENCY_PKTID ||
+					mbuf->pkt_len < PKT_SEQ_LATENCY_MINSIZE) {
+		LOG_INFO("Not Latency packet");
+		return NULL;
 	}
 
-	probe = rte_pktmbuf_mtod(pkt, struct pkt_probe *);
-	if (probe->probe_magic != PKT_PROBE_MAGIC) {
-//		LOG_INFO("Wrong magic %u %u", PKT_PROBE_MAGIC, probe->probe_magic);
-		return -1;
-	}
-
-	*idx = probe->probe_idx;
-	return 0;
+	return rte_pktmbuf_mtod_offset(mbuf, struct pkt_latency *,
+					mbuf->pkt_len - sizeof(struct pkt_latency));
 }

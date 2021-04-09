@@ -37,6 +37,10 @@ struct tx_ctl {
 
 	struct rate_ctl tx_rate;
 
+	/* for latency measurement */
+	bool is_latency;
+	char latency_file[FILEPATH_MAX];
+
 	unsigned int len;
 	unsigned int offset;
 	struct rte_mbuf *mbuf_tbl[TX_BURST];
@@ -47,5 +51,7 @@ void tx_thread_run_tx(int portid,
 				struct pkt_seq_info *seq, const char *filename);
 
 void tx_set_rate(const char *rate_str);
+
+void tx_set_latency_file(const char *filename);
 
 #endif /* _PKTGEN_TX_H_ */
