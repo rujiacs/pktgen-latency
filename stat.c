@@ -232,9 +232,12 @@ bool stat_is_stop(void)
 	tx_state = ctl_get_state(WORKER_TX);
 	rx_state = ctl_get_state(WORKER_RX);
 
-	if ((tx_state == STATE_UNINIT || tx_state == STATE_INITED) &&
-					(rx_state == STATE_UNINIT || rx_state == STATE_INITED))
+	if (tx_state != STATE_ERROR && tx_state != STATE_STOPPED)
 		return false;
+
+	if (rx_state != STATE_ERROR && rx_state != STATE_STOPPED)
+		return false;
+
 	return true;
 }
 

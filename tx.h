@@ -30,12 +30,14 @@ struct tx_ctl {
 
 	struct pkt_seq_info pkt_info;
 
+	struct rate_ctl tx_rate;
+
+	unsigned tx_burst;
+
 	/* fot 5-tuple trace */
 	unsigned nb_trace;
 	unsigned trace_iter;
 	struct pkt_seq_info trace[TUPLE_TRACE_MAX];
-
-	struct rate_ctl tx_rate;
 
 	/* for latency measurement */
 	bool is_latency;
@@ -51,6 +53,8 @@ void tx_thread_run_tx(int portid,
 				struct pkt_seq_info *seq, const char *filename);
 
 void tx_set_rate(const char *rate_str);
+
+void tx_set_burst(int burst);
 
 void tx_enable_latency(void);
 

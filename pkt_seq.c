@@ -153,6 +153,7 @@ static void __setup_latency(struct rte_mbuf *mbuf)
 						mbuf->pkt_len - sizeof(struct pkt_latency));
 	lat->id = pkt_idx;
 	lat->timestamp = rte_get_tsc_cycles();
+//	LOG_INFO("Setup pkt %p:%lu", (void*)mbuf, lat->id);
 	pkt_idx ++;
 }
 

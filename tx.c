@@ -27,6 +27,12 @@ struct pkt_setup_param {
 static struct tx_ctl tx_ctl = {
 	.tx_type = TX_TYPE_SINGLE,
 	.tx_mp = NULL,
+	.tx_rate = {
+		.rate_bps = 0,
+		.cycle_per_byte = 0,
+		.next_tx_cycle = 0,
+	},
+	.tx_burst = TX_BURST,
     .nb_trace = 0,
     .trace_iter = 0,
 	.trace = {
@@ -38,11 +44,6 @@ static struct tx_ctl tx_ctl = {
 			.proto = 0,
 			.pkt_len = 0,
 		}
-	},
-	.tx_rate = {
-		.rate_bps = 0,
-		.cycle_per_byte = 0,
-		.next_tx_cycle = 0,
 	},
 	.is_latency = false,
 	.len = 0,
@@ -58,6 +59,16 @@ void tx_set_rate(const char *rate_str)
 void tx_enable_latency(void)
 {
 	tx_ctl.is_latency = true;
+}
+
+void tx_set_burst(int burst)
+{
+	if (burst <= 0 || burst > TX_BURST) {
+		LOG_INFO("Burst size %d is invalied, use the default value %u",
+						burst, TX_BURST);
+		return;
+	}
+	tx_ctl.tx_burst = burst;
 }
 
 static void __set_tx_pkt_info(struct pkt_seq_info *info)
@@ -200,56 +211,56 @@ static inline int
 __pktmbuf_alloc_bulk(struct rte_mempool *pool,
 		      struct rte_mbuf **mbufs, unsigned count)
 {
-	unsigned idx = 0;
+//	unsigned idx = 0;
 	int rc;
 
 	rc = rte_mempool_get_bulk(pool, (void * *)mbufs, count);
 	if (unlikely(rc))
 		return rc;
 
-	switch (count % 4) {
-	case 0:
-		while (idx != count) {
-#ifdef RTE_ASSERT
-			RTE_ASSERT(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-#else
-			RTE_VERIFY(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-#endif
-			rte_mbuf_refcnt_set(mbufs[idx], 1);
-			__pktmbuf_reset(mbufs[idx]);
-			idx++;
-			/* fall-through */
-		case 3:
-#ifdef RTE_ASSERT
-			RTE_ASSERT(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-#else
-			RTE_VERIFY(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-#endif
-			rte_mbuf_refcnt_set(mbufs[idx], 1);
-			__pktmbuf_reset(mbufs[idx]);
-			idx++;
-			/* fall-through */
-		case 2:
-#ifdef RTE_ASSERT
-			RTE_ASSERT(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-#else
-			RTE_VERIFY(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-#endif
-			rte_mbuf_refcnt_set(mbufs[idx], 1);
-			__pktmbuf_reset(mbufs[idx]);
-			idx++;
-			/* fall-through */
-		case 1:
-#ifdef RTE_ASSERT
-			RTE_ASSERT(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-#else
-			RTE_VERIFY(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-#endif
-			rte_mbuf_refcnt_set(mbufs[idx], 1);
-			__pktmbuf_reset(mbufs[idx]);
-			idx++;
-		}
-	}
+//	switch (count % 4) {
+//	case 0:
+//		while (idx != count) {
+//#ifdef RTE_ASSERT
+//			RTE_ASSERT(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
+//#else
+//			RTE_VERIFY(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
+//#endif
+//			rte_mbuf_refcnt_set(mbufs[idx], 1);
+//			__pktmbuf_reset(mbufs[idx]);
+//			idx++;
+//			/* fall-through */
+//		case 3:
+//#ifdef RTE_ASSERT
+//			RTE_ASSERT(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
+//#else
+//			RTE_VERIFY(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
+//#endif
+//			rte_mbuf_refcnt_set(mbufs[idx], 1);
+//			__pktmbuf_reset(mbufs[idx]);
+//			idx++;
+//			/* fall-through */
+//		case 2:
+//#ifdef RTE_ASSERT
+//			RTE_ASSERT(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
+//#else
+//			RTE_VERIFY(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
+//#endif
+//			rte_mbuf_refcnt_set(mbufs[idx], 1);
+//			__pktmbuf_reset(mbufs[idx]);
+//			idx++;
+//			/* fall-through */
+//		case 1:
+//#ifdef RTE_ASSERT
+//			RTE_ASSERT(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
+//#else
+//			RTE_VERIFY(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
+//#endif
+//			rte_mbuf_refcnt_set(mbufs[idx], 1);
+//			__pktmbuf_reset(mbufs[idx]);
+//			idx++;
+//		}
+//	}
 	return 0;
 }
 
@@ -268,16 +279,18 @@ static int __process_tx(int portid __rte_unused, struct tx_ctl *ctl)
 	}
 
 	if (ctl->len <= 0) {
-		ret = __pktmbuf_alloc_bulk(ctl->tx_mp, ctl->mbuf_tbl, TX_BURST);
+//		ret = __pktmbuf_alloc_bulk(ctl->tx_mp, ctl->mbuf_tbl, TX_BURST);
+		ret = __pktmbuf_alloc_bulk(ctl->tx_mp, ctl->mbuf_tbl, ctl->tx_burst);
 		if (ret == 0) {
 			pkts = ctl->mbuf_tbl;
-			cnt = TX_BURST;
+//			cnt = TX_BURST;
+			cnt = ctl->tx_burst;
 
 			for (i = 0; i < cnt; i++) {
 				__pkt_setup(pkts[i], ctl->tx_type);
 			}
 
-			ctl->len = TX_BURST;
+			ctl->len = cnt;
 			ctl->offset = 0;
 
 		} else {
