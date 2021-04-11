@@ -25,6 +25,8 @@ struct ctl_worker {
 
 bool ctl_is_stop(unsigned workerid);
 
+void ctl_quit(void);
+
 void ctl_signal_handler(int signo);
 
 unsigned ctl_get_state(unsigned worker);

@@ -32,6 +32,8 @@ static struct tx_ctl tx_ctl = {
 		.cycle_per_byte = 0,
 		.next_tx_cycle = 0,
 	},
+	.tx_count = 0,
+	.tx_ret = 0,
 	.tx_burst = TX_BURST,
     .nb_trace = 0,
     .trace_iter = 0,
@@ -54,6 +56,16 @@ static struct tx_ctl tx_ctl = {
 void tx_set_rate(const char *rate_str)
 {
 	rate_set_rate(rate_str, &tx_ctl.tx_rate);
+}
+
+void tx_set_count(int cnt)
+{
+	if (cnt <= 0) {
+		LOG_INFO("TX count value %d is invalid", cnt);
+		return;
+	}
+	tx_ctl.tx_count = cnt;
+	tx_ctl.tx_ret = cnt;
 }
 
 void tx_enable_latency(void)
@@ -218,50 +230,6 @@ __pktmbuf_alloc_bulk(struct rte_mempool *pool,
 	rc = rte_mempool_get_bulk(pool, (void * *)mbufs, count);
 	if (unlikely(rc))
 		return rc;
-
-//	switch (count % 4) {
-//	case 0:
-//		while (idx != count) {
-//#ifdef RTE_ASSERT
-//			RTE_ASSERT(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-//#else
-//			RTE_VERIFY(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-//#endif
-//			rte_mbuf_refcnt_set(mbufs[idx], 1);
-//			__pktmbuf_reset(mbufs[idx]);
-//			idx++;
-//			/* fall-through */
-//		case 3:
-//#ifdef RTE_ASSERT
-//			RTE_ASSERT(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-//#else
-//			RTE_VERIFY(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-//#endif
-//			rte_mbuf_refcnt_set(mbufs[idx], 1);
-//			__pktmbuf_reset(mbufs[idx]);
-//			idx++;
-//			/* fall-through */
-//		case 2:
-//#ifdef RTE_ASSERT
-//			RTE_ASSERT(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-//#else
-//			RTE_VERIFY(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-//#endif
-//			rte_mbuf_refcnt_set(mbufs[idx], 1);
-//			__pktmbuf_reset(mbufs[idx]);
-//			idx++;
-//			/* fall-through */
-//		case 1:
-//#ifdef RTE_ASSERT
-//			RTE_ASSERT(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-//#else
-//			RTE_VERIFY(rte_mbuf_refcnt_read(mbufs[idx]) == 0);
-//#endif
-//			rte_mbuf_refcnt_set(mbufs[idx], 1);
-//			__pktmbuf_reset(mbufs[idx]);
-//			idx++;
-//		}
-//	}
 	return 0;
 }
 
@@ -280,12 +248,14 @@ static int __process_tx(int portid __rte_unused, struct tx_ctl *ctl)
 	}
 
 	if (ctl->len <= 0) {
-//		ret = __pktmbuf_alloc_bulk(ctl->tx_mp, ctl->mbuf_tbl, TX_BURST);
-		ret = __pktmbuf_alloc_bulk(ctl->tx_mp, ctl->mbuf_tbl, ctl->tx_burst);
+		cnt = ctl->tx_burst;
+
+		if (ctl->tx_count && ctl->tx_burst > ctl->tx_ret)
+			cnt = ctl->tx_ret;
+
+		ret = __pktmbuf_alloc_bulk(ctl->tx_mp, ctl->mbuf_tbl, cnt);
 		if (ret == 0) {
 			pkts = ctl->mbuf_tbl;
-//			cnt = TX_BURST;
-			cnt = ctl->tx_burst;
 
 			for (i = 0; i < cnt; i++) {
 				__pkt_setup(pkts[i], ctl->tx_type);
@@ -303,6 +273,9 @@ static int __process_tx(int portid __rte_unused, struct tx_ctl *ctl)
 
 	pkts = &ctl->mbuf_tbl[ctl->offset];
 	ret = rte_eth_tx_burst(portid, 0, pkts, ctl->len);
+
+	if (ctl->tx_count)
+		ctl->tx_ret -= ret;
 	ctl->len -= ret;
 	ctl->offset += ret;
 
@@ -351,6 +324,12 @@ void tx_thread_run_tx(int portid,
 		/* TX */
 		if (__process_tx(portid, &tx_ctl) < 0) {
 			LOG_ERROR("TX error!");
+			break;
+		}
+
+		if (tx_ctl.tx_count && tx_ctl.tx_ret == 0) {
+			LOG_INFO("TX %u packets, stop test", tx_ctl.tx_count);
+			ctl_quit();
 			break;
 		}
 	}

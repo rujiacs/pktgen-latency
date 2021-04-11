@@ -32,6 +32,8 @@ struct tx_ctl {
 
 	struct rate_ctl tx_rate;
 
+	unsigned tx_count;
+	unsigned tx_ret;
 	unsigned tx_burst;
 
 	/* fot 5-tuple trace */
@@ -53,7 +55,7 @@ void tx_thread_run_tx(int portid,
 				struct pkt_seq_info *seq, const char *filename);
 
 void tx_set_rate(const char *rate_str);
-
+void tx_set_count(int cnt);
 void tx_set_burst(int burst);
 
 void tx_enable_latency(void);

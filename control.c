@@ -30,6 +30,11 @@ bool ctl_is_stop(unsigned workerid)
 	return false;
 }
 
+void ctl_quit(void)
+{
+	force_quit = true;
+}
+
 void ctl_signal_handler(int signo)
 {
 	if (signo == SIGINT || signo == SIGTERM) {

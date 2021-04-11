@@ -46,6 +46,7 @@ static void __usage(const char *progname)
 	LOG_INFO("\t\t-l <latency file prefix>");
 	LOG_INFO("\t\t-R Random pakcets");
 	LOG_INFO("\t\t-b <TX burst size>");
+	LOG_INFO("\t\t-c <number of packets to send>");
 }
 
 static int __parse_options(int argc, char *argv[])
@@ -56,7 +57,7 @@ static int __parse_options(int argc, char *argv[])
 	bool is_trace = false, is_random = false;
 
 	progname = argv[0];
-	while ((opt = getopt(argc, argvopt, "t:r:l:o:Rb:")) != -1) {
+	while ((opt = getopt(argc, argvopt, "t:r:l:o:Rb:c:")) != -1) {
 		switch(opt) {
 			case 't':
 				trace_file = strdup(optarg);
@@ -88,6 +89,9 @@ static int __parse_options(int argc, char *argv[])
 				break;
 			case 'b':
 				tx_set_burst(atoi(optarg));
+				break;
+			case 'c':
+				tx_set_count(atoi(optarg));
 				break;
 			default:
 				__usage(progname);
