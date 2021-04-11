@@ -12,7 +12,7 @@ def parse_raw(rawfile):
     byte = infile.read(24)
     while byte:
         (id, tx, rx) = struct.unpack("<3Q", byte)
-        outfile.write("{0}\t{1}\n".format(id, int((rx - tx) / 2.1)))
+        outfile.write("{0}\t{1}\n".format(id, int((rx - tx) / 2100)))
         byte = infile.read(24)
     infile.close()
     outfile.close()
