@@ -67,6 +67,8 @@ struct udpip_hdr {
 #define PKT_SEQ_LATENCY_MINSIZE 72
 
 void pkt_seq_set_default_mac(void);
+void pkt_seq_set_src_mac(uint16_t portid);
+void pkt_seq_set_dst_mac(uint16_t portid);
 
 void pkt_seq_init(struct pkt_seq_info *info);
 

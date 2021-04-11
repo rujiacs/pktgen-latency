@@ -73,7 +73,8 @@ void tx_set_burst(int burst)
 
 static void __set_tx_pkt_info(struct pkt_seq_info *info)
 {
-	pkt_seq_set_default_mac();
+	pkt_seq_set_src_mac(0);
+	pkt_seq_set_dst_mac(1);
 
 	if (info == NULL) {
 		pkt_seq_init(&tx_ctl.pkt_info);

@@ -37,6 +37,30 @@ static void __parse_mac_addr(const char *str,
 	}
 }
 
+void pkt_seq_set_src_mac(uint16_t portid)
+{
+	int retval = 0;
+
+	retval = rte_eth_macaddr_get(portid, &mac_src);
+	if (retval != 0) {
+		LOG_INFO("Cannot get port MAC, use the default one %s",
+					PKT_SEQ_MAC_SRC);
+		__parse_mac_addr(PKT_SEQ_MAC_SRC, &mac_src);
+	}
+}
+
+void pkt_seq_set_dst_mac(uint16_t portid)
+{
+	int retval = 0;
+
+	retval = rte_eth_macaddr_get(portid, &mac_dst);
+	if (retval != 0) {
+		LOG_INFO("Cannot get port MAC, use the default one %s",
+					PKT_SEQ_MAC_DST);
+		__parse_mac_addr(PKT_SEQ_MAC_DST, &mac_dst);
+	}
+}
+
 void pkt_seq_set_default_mac(void)
 {
 	__parse_mac_addr(PKT_SEQ_MAC_SRC, &mac_src);
