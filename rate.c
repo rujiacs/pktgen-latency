@@ -49,7 +49,7 @@ bool rate_set_rate(const char *rate_str,
 			tx_rate = val << 20;
 			break;
 		case 'g':	case 'G':
-			tx_rate = val << 40;
+			tx_rate = val << 30;
 			break;
 		default:
 			tx_rate = val;
