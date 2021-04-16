@@ -111,8 +111,8 @@ static inline void __process_stat(struct stat_info *stat,
 	sec = (double)(cur_cycle - stat->last_cycle) / stat_ctl.cycle_per_sec;
 	stat->last_cycle = cur_cycle;
 
-	*bps = (bytes - last_b) * 8 / (sec * 1024);
-	*pps = (pkts - last_p) / (sec * 1024);
+	*bps = (bytes - last_b) * 8 / (sec * 1024 * 1024);
+	*pps = (pkts - last_p) / (sec * 1000 * 1000);
 }
 
 static void __summary_stat(uint64_t cycles)
@@ -256,9 +256,9 @@ uint64_t stat_processing(void)
 							&bps[i], &pps[i]);
 	}
 
-	LOG_INFO("TX speed %lf kbps, %lf pps",
+	LOG_INFO("TX speed %lf mbps, %lf kpps",
 					bps[STAT_IDX_TX], pps[STAT_IDX_TX]);
-	LOG_INFO("RX speed %lf kbps, %lf pps",
+	LOG_INFO("RX speed %lf mbps, %lf kpps",
 					bps[STAT_IDX_RX], pps[STAT_IDX_RX]);
 
 	stat_ctl.next_dump_cycle = cur_cycle + stat_ctl.dump_interval;

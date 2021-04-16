@@ -29,7 +29,7 @@ static struct tx_ctl tx_ctl = {
 	.tx_mp = NULL,
 	.tx_rate = {
 		.rate_bps = 0,
-		.cycle_per_byte = 0,
+		.cycle_per_pkt = 0,
 		.next_tx_cycle = 0,
 	},
 	.tx_count = 0,
@@ -281,7 +281,7 @@ static int __process_tx(int portid __rte_unused, struct tx_ctl *ctl)
 
 	sum = (ctl->pkt_info.pkt_len) * ret;
 	stat_update_tx(sum, ret);
-	rate_set_next_cycle(&ctl->tx_rate, start_cyc, sum);
+	rate_set_next_cycle(&ctl->tx_rate, start_cyc, ret);
 	return 0;
 }
 

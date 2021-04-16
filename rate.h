@@ -6,14 +6,15 @@
 
 struct rate_ctl {
 	uint64_t rate_bps;
-	uint64_t cycle_per_byte;
+//	uint64_t cycle_per_byte;
+    uint64_t cycle_per_pkt;
 	uint64_t next_tx_cycle;
 };
 
 bool rate_set_rate(const char *rate_str, struct rate_ctl *rate);
 
 void rate_set_next_cycle(struct rate_ctl *rate,
-				uint64_t cur_cycle, uint16_t pkt_len);
+                uint64_t cur_cycle, unsigned nb_pkt);
 
 void rate_wait_for_time(uint64_t next_cycle);
 

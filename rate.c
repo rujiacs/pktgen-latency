@@ -1,5 +1,6 @@
 #include "util.h"
 #include "rate.h"
+#include "pkt_seq.h"
 
 #include <rte_cycles.h>
 
@@ -8,13 +9,17 @@
 /* - Cycles per second */
 static uint64_t cycle_per_sec = 0;
 
-static uint64_t __get_cycle_per_byte(uint64_t tx_bps)
+static uint64_t __get_cycle_per_pkt(uint64_t tx_bps)
 {
 	if (cycle_per_sec == 0) {
 		cycle_per_sec = rte_get_tsc_hz();
 	}
 
-	return (cycle_per_sec / (tx_bps / 8));
+    uint64_t pps = tx_bps / (8 * PKT_SEQ_PKT_LEN);
+
+    if (pps == 0) pps = 1;
+
+	return (cycle_per_sec / pps);
 }
 
 /* Format: e.g 1000k => 1000 kbps, 2m => 2 mbps,
@@ -56,17 +61,18 @@ bool rate_set_rate(const char *rate_str,
 	}
 
 	rate->rate_bps = tx_rate;
-	rate->cycle_per_byte = __get_cycle_per_byte(tx_rate);
+    rate->cycle_per_pkt = __get_cycle_per_pkt(tx_rate);
+//	rate->cycle_per_byte = __get_cycle_per_byte(tx_rate);
 	rate->next_tx_cycle = 0;
-	LOG_INFO("bps %lu, hz %lu, cycle_per_byte %lu", tx_rate,
-					cycle_per_sec, rate->cycle_per_byte);
+	LOG_INFO("bps %lu, hz %lu, cycle_per_pkt %lu", tx_rate,
+					cycle_per_sec, rate->cycle_per_pkt);
 	return true;
 }
 
 void rate_set_next_cycle(struct rate_ctl *rate,
-				uint64_t cur_cycle, uint16_t pkt_len)
+				uint64_t cur_cycle, unsigned nb_pkt)
 {
-	rate->next_tx_cycle =  cur_cycle + rate->cycle_per_byte * pkt_len;
+	rate->next_tx_cycle =  cur_cycle + rate->cycle_per_pkt * nb_pkt;
 }
 
 void rate_wait_for_time(uint64_t next_cycle)
